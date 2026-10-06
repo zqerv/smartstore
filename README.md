@@ -71,6 +71,39 @@ npm run build
 npm start
 ```
 
+### Production frontend (Vercel)
+
+The client uses `import.meta.env.VITE_API_URL` and
+`import.meta.env.VITE_SOCKET_URL`. The public production defaults in
+[client/.env.production](client/.env.production) are:
+
+```env
+VITE_API_URL=https://smartstore-7pbc.onrender.com/api
+VITE_SOCKET_URL=https://smartstore-7pbc.onrender.com
+```
+
+Set the same values in Vercel's Production environment settings if overrides
+are configured. Vercel environment variables take precedence over the checked-in
+defaults. Redeploy after changing them: Vite embeds these values at build time.
+Login uses `POST https://smartstore-7pbc.onrender.com/api/auth/login`.
+With `NODE_ENV=production`, the backend includes
+`https://vayron-store.vercel.app` in the shared API and Socket.IO CORS allowlist,
+while preserving additional origins configured through `CORS_ORIGIN`.
+Redeploy the Render backend as well as the Vercel client when applying this fix.
+
+Local development can use [client/.env.example](client/.env.example); localhost
+fallbacks are enabled only by Vite's development mode. Do not copy local URL
+values into Vercel's Production settings.
+
+Database-free validation:
+
+```bash
+npm run test --workspace client
+npm run typecheck --workspace client
+npm run build --workspace client
+npm run test:cors --workspace server
+```
+
 ## 📁 Project Structure
 
 ```

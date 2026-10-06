@@ -1,7 +1,11 @@
-export const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:5000/api')
+export const API_URL = (import.meta.env.VITE_API_URL || (import.meta.env.DEV
+  ? 'http://localhost:5000/api'
+  : 'https://smartstore-7pbc.onrender.com/api'))
   .replace(/\/+$/, '');
 
-export const SOCKET_URL = (import.meta.env.VITE_SOCKET_URL || 'http://localhost:5000')
+export const SOCKET_URL = (import.meta.env.VITE_SOCKET_URL || (import.meta.env.DEV
+  ? 'http://localhost:5000'
+  : 'https://smartstore-7pbc.onrender.com'))
   .replace(/\/+$/, '');
 
 export type ApiEnvelope<T = unknown> = {
@@ -47,7 +51,7 @@ export async function apiRequest<T>(
       headers,
     });
   } catch {
-    throw new ApiError('تعذّر الاتصال بالخادم. تحقق من تشغيل API على المنفذ 5000.', 0, 'NETWORK_ERROR');
+    throw new ApiError('تعذّر الاتصال بالخادم. تحقق من اتصال الإنترنت وحاول مرة أخرى.', 0, 'NETWORK_ERROR');
   }
 
   const contentType = response.headers.get('content-type') || '';

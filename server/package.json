@@ -16,7 +16,8 @@
     "test:commerce": "node test-commerce.js",
     "test:security": "node test-security.js",
     "test:realtime": "node test-realtime.js",
-    "test:features": "node test-features.js"
+    "test:features": "node test-features.js",
+    "test:cors": "node --import tsx --test tests/cors.test.ts"
   },
   "license": "MIT",
   "dependencies": {

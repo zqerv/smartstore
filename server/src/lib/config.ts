@@ -1,6 +1,7 @@
 import dotenv from 'dotenv';
 import { existsSync } from 'fs';
 import { join } from 'path';
+import { getCorsOrigins } from './cors-origins';
 
 // Load environment variables
 const envFile = process.env.NODE_ENV === 'production' ? '.env' : '.env.development';
@@ -30,7 +31,7 @@ export const config = {
   cookieSecret: process.env.COOKIE_SECRET || 'cookie-secret-here',
 
   // CORS
-  corsOrigin: process.env.CORS_ORIGIN || 'http://localhost:5173',
+  corsOrigin: getCorsOrigins(process.env.CORS_ORIGIN, process.env.NODE_ENV).join(','),
 
   // Rate Limiting
   rateLimitWindowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS || '900000', 10), // 15 minutes
