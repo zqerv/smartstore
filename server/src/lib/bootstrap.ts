@@ -85,6 +85,13 @@ export async function ensureDemoData(): Promise<void> {
   const adminHash = await bcrypt.hash(DEMO_ADMIN.password, 12);
   const ownerHash = await bcrypt.hash(DEMO_OWNER.password, 12);
   const customerHash = await bcrypt.hash(DEMO_CUSTOMER.password, 12);
+  // Hash outside the transaction: bcrypt is CPU-bound and would otherwise eat into the transaction timeout.
+  const luxuryHashes = new Map<string, string>();
+  for (const demo of LUXURY_DEMOS) {
+    for (const account of [demo.owner, demo.staff]) {
+      luxuryHashes.set(account.email, await bcrypt.hash(account.password, 12));
+    }
+  }
 
   await db.$transaction(async (tx) => {
     await tx.user.upsert({
@@ -234,13 +241,26 @@ export async function ensureDemoData(): Promise<void> {
       },
     });
 
-    await ensureLuxuryStores(tx);
+    await ensureLuxuryStores(tx, luxuryHashes);
 
     logger.info('Demo data ensured for SmartStore.');
+  }, {
+    // Bootstrap runs ~60 sequential idempotent upserts; the 5s default is too short on remote databases.
+    maxWait: 10000,
+    timeout: 30000,
   });
 }
 
-async function ensureLuxuryStores(tx: Prisma.TransactionClient): Promise<void> {
+async function ensureLuxuryStores(
+  tx: Prisma.TransactionClient,
+  passwordHashes: ReadonlyMap<string, string>,
+): Promise<void> {
+  const hashFor = (email: string): string => {
+    const hash = passwordHashes.get(email);
+    if (!hash) throw new Error(`Missing demo password hash for ${email}`);
+    return hash;
+  };
+
   for (const [storeIndex, demo] of LUXURY_DEMOS.entries()) {
     const store = await tx.store.upsert({
       where: { slug: demo.slug },
@@ -282,7 +302,7 @@ async function ensureLuxuryStores(tx: Prisma.TransactionClient): Promise<void> {
       create: {
         email: demo.owner.email,
         phone: demo.owner.phone,
-        password: await bcrypt.hash(demo.owner.password, 12),
+        password: hashFor(demo.owner.email),
         firstName: demo.owner.name,
         role: UserRole.STORE_OWNER,
         storeId: store.id,
@@ -301,7 +321,7 @@ async function ensureLuxuryStores(tx: Prisma.TransactionClient): Promise<void> {
       create: {
         email: demo.staff.email,
         phone: demo.staff.phone,
-        password: await bcrypt.hash(demo.staff.password, 12),
+        password: hashFor(demo.staff.email),
         firstName: demo.staff.name,
         role: UserRole.STAFF,
         storeId: store.id,
