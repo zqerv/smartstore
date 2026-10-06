@@ -1,0 +1,108 @@
+# Dependencies
+node_modules/
+**/node_modules/
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+**/.env
+**/.env.*
+!**/.env.example
+
+# Build output
+**/dist/
+**/build/
+coverage/
+.nyc_output/
+
+# Logs and runtime data
+logs/
+**/logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+
+# Local uploads and databases
+uploads/
+**/uploads/
+*.db
+*.db-journal
+
+# IDE and OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+
+# Temporary files, backups, and local diagnostics
+*.tmp
+*.bak
+*.backup
+*.corrupted-backup
+/temp_*
+/temp*
+/test.txt
+/query
+/schema_temp.txt
+
+# Local-only demo access details
+/DEMO_ACCESS.md
+
+# TypeScript incremental/emit artifacts (sources are the .ts files)
+*.tsbuildinfo
+/client/vite.config.js
+/client/vite.config.d.ts
+
+# Prisma: only schema.prisma, migrations/ and seed.ts are source
+/server/prisma/*.js
+/server/prisma/*.js.map
+/server/prisma/*.d.ts
+/server/prisma/*.d.ts.map
+/server/prisma/*.txt
+/server/prisma/*.bat
+/server/prisma/*.old
+/server/prisma/seed_*.ts
+/server/prisma/temp_*
+/server/prisma/build_seed.ts
+/server/prisma/verify_seed_test.ts
+/server/prisma?*.js
+seed-output.txt
+seed-data.txt
+
+# Server scratch output and one-off local helpers
+/server/tmp/
+/server/fix-*.js
+/server/fix-*.mjs
+/server/make_schema.bat
+/server/run-prisma.js
+/server/start-server.bat
+/server/start-server.mjs
+/server/test-node.js
+/server/test-mt-isolation.js
+
+# Root one-off fix/debug scripts
+/app-fix.js
+/apply-fixes.js
+/fix-txt.js
+/fix_seed.js
+/fix_schema.ps1
+/append_new_schema.ps1
+/script.js
+/verify-fixes.js
+
+# Patches and merge leftovers
+*.patch
+*.orig
+*.rej
+*.old
+
+# Local progress/status reports (may contain environment details)
+/SMARTSTORE_IMPLEMENTATION_STATUS.md*
+/BLOCKER_RECOVERY_AND_PROGRESS.md
+/server/IMPLEMENTATION_SUMMARY.md
+/server/MASTER_STATUS.md
+/server/PHASE_*_STATUS.md

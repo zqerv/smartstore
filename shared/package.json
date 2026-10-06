@@ -1,0 +1,21 @@
+{
+  "name": "smartstore-shared",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Shared types and utilities for SmartStore",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch"
+  },
+  "keywords": [
+    "shared",
+    "types"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "typescript": "^5.3.3"
+  }
+}
