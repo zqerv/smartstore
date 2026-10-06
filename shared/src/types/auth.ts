@@ -1,4 +1,5 @@
 import type { Decimal } from "@prisma/client/runtime/library";
+import type { UserRole } from "./common";
 
 export type Price = Decimal;
 

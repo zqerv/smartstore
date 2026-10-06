@@ -12,6 +12,9 @@ import {
 } from './response';
 import { ApiResponse } from '@smartstore/shared';
 
+// Development-only error payload: the stack is never sent in production.
+type ErrorApiResponse = ApiResponse & { stack?: string };
+
 // Custom App Errors
 export class AppError extends Error {
   constructor(
@@ -100,7 +103,7 @@ export function errorHandler(
   }
 
   // Unknown errors
-  const errorResponse: ApiResponse = {
+  const errorResponse: ErrorApiResponse = {
     success: false,
     message: process.env.NODE_ENV === 'production'
       ? 'Internal server error'
@@ -117,7 +120,7 @@ export function errorHandler(
 }
 
 function sendErrorResponse(res: Response, err: AppError) {
-  const response: ApiResponse = {
+  const response: ErrorApiResponse = {
     success: false,
     message: err.message,
     code: err.code,

@@ -1,8 +1,8 @@
 // SmartStore Shared Types and Constants - Central Import
 
-// Import from common
 export {
   // Core Types
+  UserRole,
   GeoLocation,
   Address,
   OrderAddress,
@@ -22,11 +22,9 @@ export {
   // Value Types
   Ordering,
   FilterParams as FilterParamsPlaceholder,
-} from './common';
+} from './types/common';
 
-// Import from auth
 export {
-  UserRole,
   Price,
   AuthUser,
   JWTPayload,
@@ -40,4 +38,4 @@ export {
   UpdatePasswordRequest,
   SessionData,
   RefreshToken,
-};
+} from './types/auth';

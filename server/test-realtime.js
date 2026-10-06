@@ -2,7 +2,7 @@ require('dotenv').config();
 
 const path = require('path');
 const { PrismaClient } = require('@prisma/client');
-const { io } = require(path.join(__dirname, '..', 'client', 'node_modules', 'socket.io-client'));
+const { io } = require(require.resolve('socket.io-client', { paths: [path.join(__dirname, '..', 'client')] }));
 
 const BASE_URL = process.env.SMARTSTORE_API_URL || 'http://localhost:5000';
 const db = new PrismaClient();
