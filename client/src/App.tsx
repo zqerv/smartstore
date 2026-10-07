@@ -87,6 +87,7 @@ import { Pagination } from './components/Pagination';
 import { QrDialog, QrThumb, tableEntryUrl } from './components/TableQr';
 import { ProductImageUploader, assetUrl } from './components/ProductImageUploader';
 import { DemoHubPage } from './pages/DemoHubPage';
+import { PublicStoreLayout } from './pages/PublicStoreLayout';
 
 type User = {
   id: string;
@@ -222,6 +223,7 @@ function App() {
 
   return (
     <AppContext.Provider value={context}>
+      <PublicStoreLayout active={isPublicStoreRoute} locale={locale} setLocale={setLocale}>
       <Routes>
         <Route path="/login" element={user ? <Navigate to="/" replace /> : <LoginPage />} />
         <Route path="/demo" element={<DemoHubPage locale={locale} setLocale={setLocale} />} />
@@ -254,6 +256,7 @@ function App() {
         <Route path="/track-order/:token" element={<TrackOrderPage />} />
         <Route path="*" element={<Navigate to={user ? '/' : '/login'} replace />} />
       </Routes>
+      </PublicStoreLayout>
     </AppContext.Provider>
   );
 }
@@ -2053,6 +2056,7 @@ function StorefrontPage() {
     '--store-primary': String(storeInfo.primaryColor || '#315efb'),
     '--store-secondary': String(storeInfo.secondaryColor || '#19213a'),
   } as React.CSSProperties : undefined;
+  const heroImage = assetUrl((products[0]?.productImages as Record<string, unknown> | undefined)?.url);
 
   return <div className={`storefront-page ${slug ? 'branded-storefront' : ''}`} style={storeStyle}>
     {slug && <header className="storefront-topbar"><Link to={`/store/${encodeURIComponent(slug)}`} className="store-wordmark">{storeName}</Link><nav><a href="#categories">{locale === 'ar' ? 'التصنيفات' : 'Collections'}</a><a href="#products">{locale === 'ar' ? 'المنتجات' : 'Shop'}</a></nav><button className="button button-outline" onClick={() => navigate(`/store/${encodeURIComponent(slug)}/cart`)}><ShoppingCart size={17} />{locale === 'ar' ? 'السلة' : 'Cart'}</button></header>}
@@ -2064,7 +2068,7 @@ function StorefrontPage() {
     </div>
     {problem && <ApiProblem error={problem} onRetry={() => void load()} />}
     {TABLES_ENABLED && activeTable && activeTable.storeId === activeStoreId && user?.role === UserRole.CUSTOMER && <div className="alert alert-info"><QrCode size={18} />{locale === 'ar' ? `طلبك مرتبط بالطاولة رقم ${activeTable.number}` : `Your order will be served at table ${activeTable.number}`}<button type="button" className="button button-quiet button-small" onClick={clearTable}>{locale === 'ar' ? 'إزالة' : 'Remove'}</button></div>}
-    <section className="storefront-hero"><div><span className="eyebrow light-eyebrow"><Sparkles size={14} />{slug ? storeName : 'SMARTSTORE MARKETPLACE'}</span><h2>{slug ? storeName : locale === 'ar' ? <>منتجات تستحق<br />مكانها في يومك.</> : <>Thoughtful finds<br />for every day.</>}</h2><p>{storeDescription}</p>{slug && <a href="#products" className="button store-hero-button">{locale === 'ar' ? 'تسوق الآن' : 'Shop now'}<ArrowLeft size={16} /></a>}</div><div className="storefront-hero-art"><div className="hero-bag"><ShoppingBag size={48} /></div><span className="hero-star star-a">✳</span><span className="hero-star star-b">✳</span><span className="hero-coin" /></div></section>
+    <section className="storefront-hero"><div><span className="eyebrow light-eyebrow"><Sparkles size={14} />{slug ? storeName : 'SMARTSTORE MARKETPLACE'}</span><h2>{slug ? storeName : locale === 'ar' ? <>منتجات تستحق<br />مكانها في يومك.</> : <>Thoughtful finds<br />for every day.</>}</h2><p>{storeDescription}</p>{slug && <a href="#products" className="button store-hero-button">{locale === 'ar' ? 'تسوق الآن' : 'Shop now'}<ArrowLeft size={16} /></a>}</div><div className="storefront-hero-art">{slug && heroImage ? <img className="public-store-hero-image" src={heroImage} alt={storeName} /> : <><div className="hero-bag"><ShoppingBag size={48} /></div><span className="hero-star star-a">✳</span><span className="hero-star star-b">✳</span><span className="hero-coin" /></>}</div></section>
     {slug && <div id="categories" className="store-category-strip"><span>{locale === 'ar' ? 'اكتشف حسب الفئة' : 'Explore by collection'}</span>{categories.map((category) => <button type="button" key={String(category.id)} className={categoryId === String(category.id) ? 'active' : ''} onClick={() => setCategoryId(categoryId === String(category.id) ? '' : String(category.id))}>{String((locale === 'ar' ? category.nameAr : category.nameEn) || category.nameAr || category.nameEn)}</button>)}</div>}
     <div id="products" className="catalog-heading"><div><h2>{locale === 'ar' ? 'مختارة لك' : 'Curated for you'}</h2><p>{slug ? storeName : locale === 'ar' ? 'من منتجات متجرك المتاحة' : 'From your available store products'}</p></div><span className="catalog-count">{loading ? '…' : `${paging.total} ${locale === 'ar' ? 'منتج' : 'products'}`}</span></div>
     {loading ? <div className="catalog-empty"><LoaderCircle className="spin" size={23} />{locale === 'ar' ? 'جارٍ تحميل المنتجات...' : 'Loading products...'}</div> : products.length ? <div className="product-grid">{products.map((product) => {
@@ -2170,9 +2174,10 @@ function CartPage() {
       const quantity = Number(item.quantity);
       const itemId = String(item.id);
       const productName = item.product && typeof item.product === 'object'
-        ? (item.product as Record<string, unknown>).nameAr || (item.product as Record<string, unknown>).nameEn
-        : item.productNameAr || item.productNameEn || item.productSlug;
-      return <div className="cart-line" key={itemId}><span className="cart-product-icon"><ShoppingBag size={19} /></span><div className="cart-line-name"><strong>{String(productName || '')}</strong><small>{locale === 'ar' ? 'الكمية' : 'Quantity'}</small></div><div className="quantity-control"><button type="button" aria-label={locale === 'ar' ? 'تقليل الكمية' : 'Decrease quantity'} disabled={quantity <= 1} onClick={() => void changeQuantity(itemId, quantity - 1)}>−</button><output>{quantity}</output><button type="button" aria-label={locale === 'ar' ? 'زيادة الكمية' : 'Increase quantity'} disabled={quantity >= 50} onClick={() => void changeQuantity(itemId, quantity + 1)}>+</button></div><strong>{formatCurrency(Number(item.unitPrice) * quantity, locale)}</strong><button className="icon-button remove-item" aria-label={locale === 'ar' ? 'إزالة' : 'Remove'} onClick={() => void removeItem(itemId)}><X size={17} /></button></div>;
+        ? (item.product as Record<string, unknown>)[locale === 'ar' ? 'nameAr' : 'nameEn'] || (item.product as Record<string, unknown>).nameAr
+        : (locale === 'ar' ? item.productNameAr : item.productNameEn) || item.productNameAr || item.productSlug;
+      const image = assetUrl(item.mainImage);
+      return <div className="cart-line" key={itemId}><span className="cart-product-icon">{image ? <img src={image} alt={String(productName || '')} /> : <ShoppingBag size={19} />}</span><div className="cart-line-name"><strong>{String(productName || '')}</strong><small>{locale === 'ar' ? 'الكمية' : 'Quantity'}</small></div><div className="quantity-control"><button type="button" aria-label={locale === 'ar' ? 'تقليل الكمية' : 'Decrease quantity'} disabled={quantity <= 1} onClick={() => void changeQuantity(itemId, quantity - 1)}>−</button><output>{quantity}</output><button type="button" aria-label={locale === 'ar' ? 'زيادة الكمية' : 'Increase quantity'} disabled={quantity >= 50} onClick={() => void changeQuantity(itemId, quantity + 1)}>+</button></div><strong>{formatCurrency(Number(item.unitPrice) * quantity, locale)}</strong><button className="icon-button remove-item" aria-label={locale === 'ar' ? 'إزالة' : 'Remove'} onClick={() => void removeItem(itemId)}><X size={17} /></button></div>;
     })}</div><div className="cart-total"><span>{locale === 'ar' ? 'الإجمالي قبل التوصيل' : 'Subtotal before delivery'}</span><strong>{formatCurrency(subtotal, locale)}</strong></div><Link to={slug ? `/store/${encodeURIComponent(slug)}/checkout` : '/checkout'} className="button button-primary checkout-link">{locale === 'ar' ? 'المتابعة لإتمام الطلب' : 'Continue to checkout'}<ArrowLeft size={17} /></Link></> : <div className="table-state empty-state"><span className="empty-illustration"><ShoppingCart size={25} /></span><strong>{locale === 'ar' ? 'سلتك فارغة' : 'Your cart is empty'}</strong><span>{locale === 'ar' ? 'أضف بعض المنتجات من المتجر للمتابعة.' : 'Add a few products from the storefront to continue.'}</span><Link to={slug ? `/store/${encodeURIComponent(slug)}` : '/storefront'} className="button button-primary button-small">{locale === 'ar' ? 'تصفح المتجر' : 'Browse store'}<ArrowLeft size={15} /></Link></div>}</section>
   </div>;
 }
@@ -2181,12 +2186,13 @@ function CheckoutPage() {
   const { user, storeId, locale } = useApp();
   const { slug } = useParams();
   const [routeStoreId, setRouteStoreId] = useState('');
+  const [routeStorePending, setRouteStorePending] = useState(Boolean(slug));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [result, setResult] = useState('');
   const [trackingToken, setTrackingToken] = useState('');
   const [cart, setCart] = useState<Record<string, unknown> | null>(null);
-  const [cartLoading, setCartLoading] = useState(false);
+  const [cartLoading, setCartLoading] = useState(Boolean(slug));
   const [zones, setZones] = useState<Record<string, unknown>[]>([]);
   const [zoneId, setZoneId] = useState('');
   const [address, setAddress] = useState('');
@@ -2205,13 +2211,25 @@ function CheckoutPage() {
     let active = true;
     if (!slug) {
       setRouteStoreId('');
+      setRouteStorePending(false);
       return;
     }
+    setRouteStoreId('');
+    setRouteStorePending(true);
+    setError('');
     apiRequest<Record<string, unknown>>(`/stores/${encodeURIComponent(slug)}/info`, { anonymous: true })
       .then((store) => {
-        if (active) setRouteStoreId(String(store.id || ''));
+        if (active) {
+          setRouteStoreId(String(store.id || ''));
+          setRouteStorePending(false);
+        }
       })
-      .catch((requestError) => { if (active) setError(requestError instanceof Error ? requestError.message : 'Unable to load this store.'); });
+      .catch((requestError) => {
+        if (active) {
+          setError(requestError instanceof Error ? requestError.message : 'Unable to load this store.');
+          setRouteStorePending(false);
+        }
+      });
     return () => { active = false; };
   }, [slug]);
   const activeStore = slug ? routeStoreId : user?.storeId || storeId || readGuestCart()?.storeId || '';
@@ -2219,6 +2237,12 @@ function CheckoutPage() {
 
   useEffect(() => {
     let active = true;
+    if (slug && !activeStore) {
+      setCart(null);
+      setZones([]);
+      setCartLoading(routeStorePending);
+      return () => { active = false; };
+    }
     setCartLoading(true);
     setError('');
     if (!activeStore) {
@@ -2253,7 +2277,7 @@ function CheckoutPage() {
       })
       .finally(() => { if (active) setCartLoading(false); });
     return () => { active = false; };
-  }, [activeStore, customerId, locale]);
+  }, [activeStore, customerId, locale, slug, routeStorePending]);
 
   async function applyCoupon() {
     setError('');

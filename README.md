@@ -134,6 +134,10 @@ Cross-store product detail requests return 404. Internal costs are not selected.
 Existing merchant routes retain authentication, tenant isolation, and RBAC.
 The public `/store/:slug` shopping flow consistently uses token-protected guest
 carts, even when a dashboard account is saved; checkout does not require registration.
+The storefront, product detail, cart, and checkout pages share a scoped VAYRON
+black/gold layout with each store's own hero colors and real catalog photography.
+Dashboard styling is unchanged. Checkout waits for store resolution before
+displaying missing-store or missing-cart feedback.
 
 With `DEMO_MODE=true` on Render, startup safely upserts exactly 30 managed
 products in each of Veloura and Maison Élan using the backend's `DATABASE_URL`.
