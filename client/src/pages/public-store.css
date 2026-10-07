@@ -29,6 +29,7 @@
 .public-commerce .store-wordmark { color: #f5f1e8; font-size: clamp(23px, 3vw, 32px); }
 .public-commerce .storefront-topbar nav { color: var(--muted); }
 .public-commerce .storefront-topbar .button { color: var(--brand); border-color: var(--line); }
+.public-commerce .storefront-filters { border-color: var(--line); background: #171819; }
 .public-commerce .field-label { min-width: 0; gap: 9px; color: #d9d3c7; font-size: 12px; }
 .public-commerce .input-control { min-width: 0; min-height: 46px; border-color: #d9bc8633; border-radius: 6px; color: var(--ink); background: #171819; font-size: 13px; }
 .public-commerce .input-control::placeholder { color: #9b968c; }
