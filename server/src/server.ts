@@ -11,6 +11,7 @@ import { initRealtime } from './lib/realtime';
 import { ensureDemoData } from './lib/bootstrap';
 import { apiLimiter } from './middleware/rateLimit';
 import { UPLOAD_ROOT } from './lib/providers/storage';
+import { join } from 'path';
 
 const app: Application = express();
 
@@ -42,6 +43,12 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 app.use('/api', apiLimiter, apiRoutes);
 app.use('/uploads', express.static(UPLOAD_ROOT, { index: false, dotfiles: 'deny', setHeaders: (res) => { res.setHeader('X-Content-Type-Options', 'nosniff'); res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin'); } }));
+app.use('/demo-assets', express.static(join(__dirname, '..', 'public', 'demo'), {
+  index: false,
+  dotfiles: 'deny',
+  maxAge: '1d',
+  setHeaders: (res) => { res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin'); },
+}));
 
 // =====================
 // Health Check

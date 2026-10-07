@@ -120,6 +120,46 @@ Production links:
 The existing Vercel SPA rewrite supports direct visits and refreshes on `/demo`.
 Deploy the client build after changing the page; no schema or data changes are needed.
 
+### Public catalogs and production demo data
+
+Public storefronts use anonymous, server-scoped catalog reads, independently of
+saved dashboard sessions:
+
+- `GET /api/stores/:idOrSlug/catalog/products` (default page size 30, maximum 100)
+- `GET /api/stores/:idOrSlug/catalog/categories`
+- `GET /api/stores/:idOrSlug/catalog/products/:productId`
+
+Only active stores, active products, and active same-store categories are returned.
+Cross-store product detail requests return 404. Internal costs are not selected.
+Existing merchant routes retain authentication, tenant isolation, and RBAC.
+The public `/store/:slug` shopping flow consistently uses token-protected guest
+carts, even when a dashboard account is saved; checkout does not require registration.
+
+With `DEMO_MODE=true` on Render, startup safely upserts exactly 30 managed
+products in each of Veloura and Maison Élan using the backend's `DATABASE_URL`.
+Existing product IDs, prices, stock and order relations are preserved. Unknown
+products in either demo store cause a transaction rollback, not deletion.
+No schema migrations, database reset, or test orders are needed.
+Verify the deployed API totals; a local seed is not evidence of production data.
+
+Product photographs are bundled under `server/public/demo` and served at
+`/demo-assets` so ephemeral uploads and third-party image availability cannot
+empty the catalog. Photography is reused from Unsplash stock sources:
+`1594035910387-fea47794261f`, `1541643600914-78b084683601`,
+`1592945403244-b3fbafd7f539`, `1616949755610-8c9bbc08f138`,
+`1608571423902-eed4a5ad8108`, `1591047139829-d91aecb6caea`,
+`1596755094514-f87e34085b2c`, `1576566588028-4147f3842f27`,
+`1539533018447-63fcce2678e3`, `1584917865442-de89df76afd3`,
+`1590874103328-eac38a683ce7`, `1539008835657-9e8e9680c956`,
+`1614252235316-8c857d38b5f4` (IDs prefixed with `photo-` on images.unsplash.com).
+These are illustrative demo photography, not a representation of actual branded stock.
+
+Run database-free catalog and idempotence regressions with
+`npm run test:catalog --workspace server`.
+After Render deploys, run `npm run verify:public-catalog --workspace server`
+to verify all 60 production product details, counts, relations, tenant scope,
+stale-session handling, and image bytes using read-only requests.
+
 ## 📁 Project Structure
 
 ```

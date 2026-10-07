@@ -4,7 +4,7 @@ import { apiRequest, SOCKET_URL } from '../lib/api';
 
 export function assetUrl(url?: unknown) {
   if (typeof url !== 'string' || !url) return '';
-  return url.startsWith('/uploads/') ? `${SOCKET_URL}${url}` : url;
+  return /^\/(?:uploads|demo-assets)\//.test(url) ? `${SOCKET_URL}${url}` : url;
 }
 
 const ALLOWED = ['image/png', 'image/jpeg', 'image/webp', 'image/gif'];

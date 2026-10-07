@@ -13,6 +13,7 @@ import customersRouter from './api/customers';
 import tablesRouter from './api/tables';
 import reportsRouter from './api/reports';
 import uploadsRouter from './api/uploads';
+import publicCatalogRouter from './api/public-catalog';
 
 const router = Router();
 
@@ -23,6 +24,7 @@ const router = Router();
 router.use('/auth', authRouter);
 router.use('/platform', platformRouter);
 router.use('/stores', storesRouter);
+router.use('/', publicCatalogRouter);
 
 // Domain routers declare their own absolute paths (e.g. /stores/:storeId/products).
 router.use('/', productsRouter);

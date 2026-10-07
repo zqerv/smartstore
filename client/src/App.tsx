@@ -57,6 +57,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from 'react';
 import { io, Socket } from 'socket.io-client';
@@ -216,7 +217,8 @@ function App() {
     socketState,
   }), [user, setUser, locale, setLocale, storeId, setStoreId, socketState]);
 
-  if (authLoading && location.pathname.replace(/\/+$/, '') !== '/demo') return <FullLoader />;
+  const isPublicStoreRoute = location.pathname.startsWith('/store/');
+  if (authLoading && !isPublicStoreRoute && location.pathname.replace(/\/+$/, '') !== '/demo') return <FullLoader />;
 
   return (
     <AppContext.Provider value={context}>
@@ -1904,8 +1906,9 @@ function StorefrontPage() {
   const [joiningStore, setJoiningStore] = useState(false);
   const [loading, setLoading] = useState(false);
   const [problem, setProblem] = useState<ApiError | null>(null);
+  const catalogRequest = useRef(0);
   const activeStoreId = slug
-    ? String(storeInfo?.id || '')
+    ? String(storeInfo?.slug === slug ? storeInfo.id : '')
     : user?.storeId || storeId;
   const [activeTable, setActiveTable] = useState<{ id: string; number: string; storeId: string } | null>(readSavedTable);
 
@@ -1917,11 +1920,8 @@ function StorefrontPage() {
     let active = true;
     setLoading(true);
     setProblem(null);
-    apiRequest<Record<string, unknown>>(`/stores/${encodeURIComponent(slug)}/info`)
-      .then(async (store) => {
-        if (user?.role === UserRole.CUSTOMER) {
-          await apiRequest(`/stores/${encodeURIComponent(String(store.id))}/join`, { method: 'POST' });
-        }
+    apiRequest<Record<string, unknown>>(`/stores/${encodeURIComponent(slug)}/info`, { anonymous: true })
+      .then((store) => {
         if (!active) return;
         setStoreInfo(store);
         setStoreId(String(store.id));
@@ -1934,7 +1934,7 @@ function StorefrontPage() {
       })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
-  }, [slug, user?.role, setStoreId]);
+  }, [slug, setStoreId]);
 
   useEffect(() => {
     const code = sessionStorage.getItem(PENDING_TABLE_KEY);
@@ -1963,33 +1963,40 @@ function StorefrontPage() {
   }, [slug]);
 
   const load = useCallback(async () => {
+    const request = ++catalogRequest.current;
     if (!activeStoreId) {
       setProducts([]);
       setCategories([]);
+      setPaging({ total: 0, totalPages: 1 });
       return;
     }
     setLoading(true);
     setProblem(null);
     try {
-      const params = new URLSearchParams({ status: 'ACTIVE', page: String(page), limit: '12' });
+      const params = new URLSearchParams({ status: 'ACTIVE', page: String(page), limit: slug ? '30' : '12' });
       if (search.trim()) params.set('search', search.trim());
       if (categoryId) params.set('categoryId', categoryId);
       const [payload, categoryPayload] = await Promise.all([
-        apiRequest<unknown>(`/stores/${encodeURIComponent(activeStoreId)}/products?${params.toString()}`),
-        apiRequest<unknown>(`/stores/${encodeURIComponent(activeStoreId)}/categories?activeOnly=true`),
+        apiRequest<unknown>(`/stores/${encodeURIComponent(activeStoreId)}/${slug ? 'catalog/' : ''}products?${params.toString()}`, { anonymous: Boolean(slug) }),
+        apiRequest<unknown>(`/stores/${encodeURIComponent(activeStoreId)}/${slug ? 'catalog/' : ''}categories?activeOnly=true`, { anonymous: Boolean(slug) }),
       ]);
+      if (request !== catalogRequest.current) return;
       const meta = (payload as { pagination?: { total?: number; totalPages?: number } } | null)?.pagination;
       setPaging({ total: Number(meta?.total) || 0, totalPages: Math.max(1, Number(meta?.totalPages) || 1) });
       setProducts(extractItems(payload, 'products').filter((item): item is Record<string, unknown> => !!item && typeof item === 'object'));
       setCategories(extractItems(categoryPayload, 'categories').filter((item): item is Record<string, unknown> => !!item && typeof item === 'object'));
     } catch (error) {
+      if (request !== catalogRequest.current) return;
       setProblem(error instanceof ApiError ? error : new ApiError('تعذّر تحميل المنتجات.', 0));
-    } finally { setLoading(false); }
-  }, [activeStoreId, search, categoryId, page]);
+    } finally { if (request === catalogRequest.current) setLoading(false); }
+  }, [activeStoreId, search, categoryId, page, slug]);
 
   useEffect(() => { setPage(1); }, [search, categoryId, activeStoreId]);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    void load();
+    return () => { catalogRequest.current++; };
+  }, [load]);
 
   async function selectStore(nextStoreId: string) {
     if (!nextStoreId) return;
@@ -2013,7 +2020,7 @@ function StorefrontPage() {
     const customerId = user?.customerId || user?.id || '';
 
     try {
-      if (!user || user.role !== UserRole.CUSTOMER) {
+      if (slug || !user || user.role !== UserRole.CUSTOMER) {
         // Guest checkout flow - use guest cart
         const cartState = readGuestCart();
         let cartId = cartState?.cartId || null;
@@ -2080,7 +2087,7 @@ function CartPage() {
   const [guestCart, setGuestCart] = useState<GuestCartData | null>(null);
   const [loading, setLoading] = useState(true);
   const [problem, setProblem] = useState<ApiError | null>(null);
-  const customerId = user?.role === UserRole.CUSTOMER ? user.customerId || user.id : '';
+  const customerId = !slug && user?.role === UserRole.CUSTOMER ? user.customerId || user.id : '';
   const savedGuestCart = readGuestCart();
   useEffect(() => {
     let active = true;
@@ -2088,16 +2095,13 @@ function CartPage() {
       setRouteStoreId('');
       return;
     }
-    apiRequest<Record<string, unknown>>(`/stores/${encodeURIComponent(slug)}/info`)
-      .then(async (store) => {
-        if (user?.role === UserRole.CUSTOMER) {
-          await apiRequest(`/stores/${encodeURIComponent(String(store.id))}/join`, { method: 'POST' });
-        }
+    apiRequest<Record<string, unknown>>(`/stores/${encodeURIComponent(slug)}/info`, { anonymous: true })
+      .then((store) => {
         if (active) setRouteStoreId(String(store.id || ''));
       })
       .catch((error) => { if (active) setProblem(error instanceof ApiError ? error : new ApiError('Unable to load this store.', 0)); });
     return () => { active = false; };
-  }, [slug, user?.role]);
+  }, [slug]);
   const activeStore = slug ? routeStoreId : user?.storeId || storeId || savedGuestCart?.storeId || '';
 
   const load = useCallback(async () => {
@@ -2203,18 +2207,15 @@ function CheckoutPage() {
       setRouteStoreId('');
       return;
     }
-    apiRequest<Record<string, unknown>>(`/stores/${encodeURIComponent(slug)}/info`)
-      .then(async (store) => {
-        if (user?.role === UserRole.CUSTOMER) {
-          await apiRequest(`/stores/${encodeURIComponent(String(store.id))}/join`, { method: 'POST' });
-        }
+    apiRequest<Record<string, unknown>>(`/stores/${encodeURIComponent(slug)}/info`, { anonymous: true })
+      .then((store) => {
         if (active) setRouteStoreId(String(store.id || ''));
       })
       .catch((requestError) => { if (active) setError(requestError instanceof Error ? requestError.message : 'Unable to load this store.'); });
     return () => { active = false; };
-  }, [slug, user?.role]);
+  }, [slug]);
   const activeStore = slug ? routeStoreId : user?.storeId || storeId || readGuestCart()?.storeId || '';
-  const customerId = user?.role === UserRole.CUSTOMER ? user.customerId || user.id || '' : '';
+  const customerId = !slug && user?.role === UserRole.CUSTOMER ? user.customerId || user.id || '' : '';
 
   useEffect(() => {
     let active = true;
@@ -2238,7 +2239,7 @@ function CheckoutPage() {
       })();
     Promise.all([
       loadCart,
-      apiRequest<unknown>(`/stores/${encodeURIComponent(activeStore)}/zones`),
+      apiRequest<unknown>(`/stores/${encodeURIComponent(activeStore)}/zones`, { anonymous: Boolean(slug) }),
     ])
       .then(([cartResult, zoneResult]) => {
         if (!active) return;
@@ -2265,6 +2266,7 @@ function CheckoutPage() {
     try {
       const quote = await apiRequest<{ discountAmount?: number }>('/coupons/apply', {
         method: 'POST',
+        anonymous: Boolean(slug),
         body: JSON.stringify({
           couponCode: couponCode.trim().toUpperCase(),
           storeId: activeStore,
@@ -2693,16 +2695,11 @@ function ProductDetailsPage() {
     setLoading(true);
     setProblem(null);
     try {
-      const nextProduct = await apiRequest<Record<string, unknown>>(`/products/${encodeURIComponent(productId)}`);
+      const nextProduct = await apiRequest<Record<string, unknown>>(slug
+        ? `/stores/${encodeURIComponent(slug)}/catalog/products/${encodeURIComponent(productId)}`
+        : `/products/${encodeURIComponent(productId)}`, { anonymous: Boolean(slug) });
       if (slug) {
-        const store = await apiRequest<Record<string, unknown>>(`/stores/${encodeURIComponent(slug)}/info`);
-        if (String(nextProduct.storeId || '') !== String(store.id || '')) {
-          throw new ApiError('This product is not part of the selected store.', 404);
-        }
-        setRouteStoreId(String(store.id || ''));
-        if (user?.role === UserRole.CUSTOMER) {
-          await apiRequest(`/stores/${encodeURIComponent(String(store.id))}/join`, { method: 'POST' });
-        }
+        setRouteStoreId(String(nextProduct.storeId || ''));
       }
       setProduct(nextProduct);
     } catch (error) {
@@ -2710,7 +2707,7 @@ function ProductDetailsPage() {
       setRouteStoreId('');
       setProblem(error instanceof ApiError ? error : new ApiError(ar ? 'تعذّر تحميل المنتج.' : 'Unable to load the product.', 0));
     } finally { setLoading(false); }
-  }, [productId, ar, slug, user?.role]);
+  }, [productId, ar, slug]);
   useEffect(() => { void load(); }, [load]);
 
   const variants = Array.isArray(product?.variants) ? (product.variants as Record<string, unknown>[]).filter((variant) => variant.isActive !== false) : [];
@@ -2723,8 +2720,8 @@ function ProductDetailsPage() {
   const name = String(((ar ? product?.nameAr : product?.nameEn) || product?.nameAr || product?.nameEn) || '');
   const description = String(((ar ? product?.descriptionAr : product?.descriptionEn) || product?.descriptionAr || product?.descriptionEn) || '');
   const activeStore = slug ? routeStoreId : user?.storeId || storeId;
-  // On the public /store/:slug routes, a leftover staff/admin session must not block shopping: it shops as a guest.
-  const shopsAsGuest = !user || (Boolean(slug) && user.role !== UserRole.CUSTOMER);
+  // Public store routes use a guest cart independently of any saved dashboard session.
+  const shopsAsGuest = Boolean(slug) || !user;
   const canShop = user?.role === UserRole.CUSTOMER || shopsAsGuest;
 
   useEffect(() => { setQuantity((current) => Math.min(Math.max(1, current), Math.max(1, available))); }, [available]);
@@ -2736,7 +2733,7 @@ function ProductDetailsPage() {
     setNotice('');
     try {
       const productStoreId = String(product.storeId || activeStore);
-      if (user?.role === UserRole.CUSTOMER) {
+      if (!shopsAsGuest && user?.role === UserRole.CUSTOMER) {
         await apiRequest(`/customers/${encodeURIComponent(user.customerId || user.id)}/cart/items`, {
           method: 'POST',
           body: JSON.stringify({ productId: product.id, quantity, storeId: productStoreId, ...(selectedVariant ? { variantId: selectedVariant.id } : {}) }),
