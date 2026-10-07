@@ -104,6 +104,22 @@ npm run build --workspace client
 npm run test:cors --workspace server
 ```
 
+### Public VAYRON STORE demo hub
+
+Visit `/demo` without signing in. The bilingual, mobile-first VAYRON landing
+page showcases only the existing Veloura Parfums (`/store/veloura`) and
+Maison Élan (`/store/maison-elan`) storefronts. It reuses their brand monograms,
+colors, and descriptions without fetching a store list or exposing demo credentials.
+The hub remains available while a saved session is being checked.
+
+Production links:
+- https://vayron-store.vercel.app/demo
+- https://vayron-store.vercel.app/store/veloura
+- https://vayron-store.vercel.app/store/maison-elan
+
+The existing Vercel SPA rewrite supports direct visits and refreshes on `/demo`.
+Deploy the client build after changing the page; no schema or data changes are needed.
+
 ## 📁 Project Structure
 
 ```

@@ -85,6 +85,7 @@ import {
 import { Pagination } from './components/Pagination';
 import { QrDialog, QrThumb, tableEntryUrl } from './components/TableQr';
 import { ProductImageUploader, assetUrl } from './components/ProductImageUploader';
+import { DemoHubPage } from './pages/DemoHubPage';
 
 type User = {
   id: string;
@@ -118,6 +119,7 @@ function useApp() {
 }
 
 function App() {
+  const location = useLocation();
   const [user, setUserState] = useState<User | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [locale, setLocaleState] = useState<Locale>(
@@ -214,13 +216,13 @@ function App() {
     socketState,
   }), [user, setUser, locale, setLocale, storeId, setStoreId, socketState]);
 
-  if (authLoading) return <FullLoader />;
+  if (authLoading && location.pathname.replace(/\/+$/, '') !== '/demo') return <FullLoader />;
 
   return (
     <AppContext.Provider value={context}>
       <Routes>
         <Route path="/login" element={user ? <Navigate to="/" replace /> : <LoginPage />} />
-        <Route path="/demo" element={<DemoHubPage />} />
+        <Route path="/demo" element={<DemoHubPage locale={locale} setLocale={setLocale} />} />
         <Route path="/demo/access" element={<DemoAccessPage />} />
         <Route path="/" element={<ProtectedShell><DashboardPage /></ProtectedShell>} />
         <Route path="/platform/stores" element={<ProtectedShell allowedRoles={[UserRole.PLATFORM_ADMIN]}><PlatformStoresPage /></ProtectedShell>} />
@@ -1868,19 +1870,6 @@ async function removeFromGuestCartItem(
 
 async function getGuestCart(cartId: string, token: string): Promise<GuestCartData> {
   return fetchGuestCart(cartId, token);
-}
-
-function DemoHubPage() {
-  const { locale } = useApp();
-  const stores = DEMO_CREDENTIALS.stores;
-  return <main className="demo-hub" dir={locale === 'ar' ? 'rtl' : 'ltr'}>
-    <header className="demo-hub-nav"><Link className="demo-brand" to="/demo">SMARTSTORE <span>DEMO</span></Link><nav><Link to="/demo/access">{locale === 'ar' ? 'حسابات الوصول' : 'Demo access'}</Link><Link to="/login">{locale === 'ar' ? 'دخول الإدارة' : 'Admin login'}<ArrowUpRight size={15} /></Link></nav></header>
-    <section className="demo-hub-hero"><span className="demo-overline"><Sparkles size={15} /> COMMERCE, BEAUTIFULLY CONNECTED</span><h1>{locale === 'ar' ? <>تجارب تسوق<br /><em>مصممة لتُلهم.</em></> : <>A closer look at<br /><em>commerce, elevated.</em></>}</h1><p>{locale === 'ar' ? 'اكتشف واجهات المتاجر التجريبية، المصممة على بيانات حقيقية وتجربة شراء متكاملة.' : 'Explore live, beautifully distinct storefronts—each powered by a real catalog and a complete shopping experience.'}</p><a className="demo-primary-link" href="#stores">{locale === 'ar' ? 'استكشف المتاجر' : 'Explore the stores'}<ArrowLeft size={17} /></a><div className="demo-hero-orb demo-orb-one" /><div className="demo-hero-orb demo-orb-two" /></section>
-    <section id="stores" className="demo-store-section"><div className="demo-section-heading"><div><span className="demo-overline">{locale === 'ar' ? 'وجهات مختارة' : 'A curated collection'}</span><h2>{locale === 'ar' ? 'اختر متجرك' : 'Step inside a store'}</h2></div><Link to="/demo/access">{locale === 'ar' ? 'بيانات الدخول' : 'View demo credentials'}<ArrowUpRight size={15} /></Link></div>
-      <div className="demo-store-grid">{stores.map((store, index) => <article key={store.slug} className={`demo-store-card demo-store-${store.slug}`}><div className="demo-store-image"><span className="demo-store-number">0{index + 1}</span><span className="demo-store-image-label">{store.descriptor}</span><span className="demo-store-monogram">{index === 1 ? 'V' : index === 2 ? 'É' : 'S'}</span></div><div className="demo-store-card-body"><span className="demo-store-kind">{store.descriptor}</span><h3>{store.name}</h3><p>{store.slug === 'veloura' ? 'A signature in every note.' : store.slug === 'maison-elan' ? 'Considered pieces. Effortless living.' : 'A thoughtfully simple way to shop.'}</p><Link to={`/store/${encodeURIComponent(store.slug)}`}>{locale === 'ar' ? 'زيارة المتجر' : 'Visit storefront'}<ArrowLeft size={16} /></Link></div></article>)}</div>
-    </section>
-    <footer className="demo-hub-footer"><span>© 2026 SmartStore</span><span>{locale === 'ar' ? 'تجربة تجريبية — بيانات الطلبات غير مخصصة للشراء الحقيقي.' : 'Demo environment · Orders are for demonstration only.'}</span><Link to="/demo/access">{locale === 'ar' ? 'الوصول إلى الإدارة' : 'Admin & staff access'}</Link></footer>
-  </main>;
 }
 
 function DemoAccessPage() {
