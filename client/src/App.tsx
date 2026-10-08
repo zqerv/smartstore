@@ -73,6 +73,7 @@ import {
 import { UserRole } from '../../shared/src/types/common';
 import { DEMO_CREDENTIALS } from '../../shared/src/demo';
 import { apiPath, apiRequest, ApiError, API_URL, SOCKET_URL } from './lib/api';
+import { productListQuery, type ProductStatusFilter } from './lib/product-list-query';
 import {
   addToGuestCart as persistAddToGuestCart,
   clearGuestCart as clearPersistedGuestCart,
@@ -1522,6 +1523,8 @@ function ResourcePage({ kind }: { kind: ResourceKind }) {
   const [variantSaving, setVariantSaving] = useState(false);
   const [variantError, setVariantError] = useState('');
   const [productCategories, setProductCategories] = useState<Record<string, unknown>[]>([]);
+  const [productCategoryId, setProductCategoryId] = useState('');
+  const [productStatus, setProductStatus] = useState<ProductStatusFilter>('ALL');
   const [selectedOrderId, setSelectedOrderId] = useState('');
   const [selectedOrder, setSelectedOrder] = useState<Record<string, unknown> | null>(null);
   const [orderDetailsLoading, setOrderDetailsLoading] = useState(false);
@@ -1530,10 +1533,16 @@ function ResourcePage({ kind }: { kind: ResourceKind }) {
   const [page, setPage] = useState(1);
   const [paging, setPaging] = useState<{ total: number; totalPages: number } | null>(null);
   const [qrRecord, setQrRecord] = useState<Record<string, unknown> | null>(null);
+  const resourceRequest = useRef(0);
   const paginated = kind !== 'staff';
   const pageSize = 10;
 
-  useEffect(() => { setPage(1); setSearch(''); }, [kind, activeStoreId]);
+  useEffect(() => {
+    setPage(1);
+    setSearch('');
+    setProductCategoryId('');
+    setProductStatus('ALL');
+  }, [kind, activeStoreId]);
   const [debouncedSearch, setDebouncedSearch] = useState('');
   useEffect(() => {
     const timer = window.setTimeout(() => { setDebouncedSearch((current) => { if (current !== search.trim()) setPage(1); return search.trim(); }); }, 350);
@@ -1541,12 +1550,16 @@ function ResourcePage({ kind }: { kind: ResourceKind }) {
   }, [search]);
 
   const load = useCallback(async () => {
+    const request = ++resourceRequest.current;
     if (!definition.enabled || !path) return;
     setLoading(true);
     setProblem(null);
     try {
-      const query = paginated ? `?page=${page}&limit=${pageSize}${kind === 'products' && debouncedSearch ? `&search=${encodeURIComponent(debouncedSearch)}` : ''}` : '';
+      const query = kind === 'products'
+        ? productListQuery({ page, limit: pageSize, search: debouncedSearch, categoryId: productCategoryId, status: productStatus })
+        : paginated ? `?page=${page}&limit=${pageSize}` : '';
       const response = await apiRequest<unknown>(`${path}${query}`);
+      if (request !== resourceRequest.current) return;
       setPayload(response);
       setItems(extractItems(response, definition.collection));
       const meta = response && typeof response === 'object' ? (response as Record<string, unknown>).pagination as Record<string, unknown> | undefined : undefined;
@@ -1558,17 +1571,30 @@ function ResourcePage({ kind }: { kind: ResourceKind }) {
         setPaging(null);
       }
       if (kind === 'products' && activeStoreId) {
-        const categoryResponse = await apiRequest<unknown>(`/stores/${encodeURIComponent(activeStoreId)}/categories`);
-        setProductCategories(extractItems(categoryResponse, 'categories').filter((item): item is Record<string, unknown> => !!item && typeof item === 'object'));
+        const categories: Record<string, unknown>[] = [];
+        let categoryPage = 1;
+        let categoryPages = 1;
+        do {
+          const categoryResponse = await apiRequest<{
+            categories: Record<string, unknown>[];
+            pagination: { totalPages: number };
+          }>(`/stores/${encodeURIComponent(activeStoreId)}/categories?page=${categoryPage}&limit=100`);
+          if (request !== resourceRequest.current) return;
+          categories.push(...categoryResponse.categories);
+          categoryPages = categoryResponse.pagination.totalPages;
+          categoryPage++;
+        } while (categoryPage <= categoryPages);
+        setProductCategories(categories);
       }
     } catch (error) {
+      if (request !== resourceRequest.current) return;
       setProblem(error instanceof ApiError ? error : new ApiError('تعذّر تحميل البيانات.', 0));
       setItems([]);
       setPayload(null);
     } finally {
-      setLoading(false);
+      if (request === resourceRequest.current) setLoading(false);
     }
-  }, [activeStoreId, definition.collection, definition.enabled, kind, path, page, paginated, debouncedSearch]);
+  }, [activeStoreId, definition.collection, definition.enabled, kind, path, page, paginated, debouncedSearch, productCategoryId, productStatus]);
 
   const loadOrderDetails = useCallback(async (orderId: string) => {
     setOrderDetailsLoading(true);
@@ -1584,7 +1610,10 @@ function ResourcePage({ kind }: { kind: ResourceKind }) {
     }
   }, []);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    void load();
+    return () => { resourceRequest.current++; };
+  }, [load]);
 
   useEffect(() => {
     const refreshOnOrderEvent = (event: Event) => {
@@ -1731,7 +1760,7 @@ function ResourcePage({ kind }: { kind: ResourceKind }) {
   }
 
   const filteredItems = items.filter((item) => {
-    if (!search) return true;
+    if (kind === 'products' || !search) return true;
     return JSON.stringify(item).toLocaleLowerCase().includes(search.toLocaleLowerCase());
   });
   const Icon = definition.icon;
@@ -1850,6 +1879,24 @@ function ResourcePage({ kind }: { kind: ResourceKind }) {
           </section>
           <section className="panel data-panel">
             <div className="data-toolbar"><div className="data-title"><span className={`resource-icon tone-${kind}`}><Icon size={17} /></span><div><h3>{title}</h3><p>{locale === 'ar' ? 'البيانات المرسلة من خادم المتجر' : 'Records returned by your store API'}</p></div></div><label className="table-search"><Search size={15} /><input placeholder={locale === 'ar' ? 'بحث في البيانات...' : 'Search records...'} value={search} onChange={(event) => setSearch(event.target.value)} /></label></div>
+            {kind === 'products' && <div className="data-toolbar">
+              <label className="field-label">{locale === 'ar' ? 'التصنيف' : 'Category'}<select className="input-control" value={productCategoryId} onChange={(event) => { setProductCategoryId(event.target.value); setPage(1); }}>
+                <option value="">{locale === 'ar' ? 'كل التصنيفات' : 'All categories'}</option>
+                {productCategories.map((category) => <option key={String(category.id)} value={String(category.id)}>{String((locale === 'ar' ? category.nameAr : category.nameEn) || category.nameAr || category.nameEn)}</option>)}
+              </select></label>
+              <label className="field-label">{locale === 'ar' ? 'الحالة' : 'Status'}<select className="input-control" value={productStatus} onChange={(event) => {
+                const value = event.target.value;
+                if (value === 'ALL' || value === 'ACTIVE' || value === 'INACTIVE' || value === 'DRAFT') {
+                  setProductStatus(value);
+                  setPage(1);
+                }
+              }}>
+                <option value="ALL">{locale === 'ar' ? 'كل الحالات' : 'All statuses'}</option>
+                <option value="ACTIVE">{locale === 'ar' ? 'نشط' : 'Active'}</option>
+                <option value="INACTIVE">{locale === 'ar' ? 'غير نشط' : 'Inactive'}</option>
+                <option value="DRAFT">{locale === 'ar' ? 'مسودة' : 'Draft'}</option>
+              </select></label>
+            </div>}
             {loading ? <div className="table-state"><LoaderCircle size={24} className="spin" /><span>{locale === 'ar' ? 'جارٍ تحميل البيانات الحقيقية...' : 'Loading live records...'}</span></div>
               : problem ? <div className="table-state empty-state"><span className="empty-illustration"><Icon size={25} /></span><strong>{locale === 'ar' ? 'تعذّر تحميل البيانات' : 'Unable to load records'}</strong><span>{locale === 'ar' ? 'أعاد API خطأً لهذا الطلب. لم نستخدم بيانات تجريبية.' : 'The API returned an error for this request. No sample records are shown.'}</span><button className="button button-outline button-small" onClick={() => void load()}><RefreshCw size={15} />{locale === 'ar' ? 'إعادة المحاولة' : 'Try again'}</button></div>
               : filteredItems.length === 0 ? <div className="table-state empty-state"><span className="empty-illustration"><Icon size={25} /></span><strong>{locale === 'ar' ? (items.length ? 'لا توجد نتائج مطابقة' : `لا توجد ${definition.title} بعد`) : (items.length ? 'No matching results' : `No ${definition.en.toLowerCase()} yet`)}</strong><span>{locale === 'ar' ? (items.length ? 'جرّب عبارة بحث أخرى.' : 'عند توفر بيانات من API ستظهر هنا مباشرة.') : (items.length ? 'Try a different search.' : 'Records from the API will appear here as soon as they exist.')}</span></div>

@@ -369,15 +369,6 @@ async function ensureLuxuryStores(
         },
       });
     }
-    const catalogCount = await tx.product.count({
-      where: { storeId: store.id, slug: { in: demo.products.map(([slug]) => slug) } },
-    });
-    if (catalogCount !== demo.products.length) {
-      throw new Error(`Incomplete demo catalog for ${demo.slug}: expected ${demo.products.length} seed slugs, found ${catalogCount}`);
-    }
-    const additionalCount = await tx.product.count({
-      where: { storeId: store.id, slug: { notIn: demo.products.map(([slug]) => slug) } },
-    });
-    logger.info(`Demo catalog ensured: ${demo.slug}, ${catalogCount} seed slugs present, ${additionalCount} additional products preserved`);
+    logger.info(`Demo seed entries ensured: ${demo.slug}; existing business data preserved`);
   }
 }

@@ -45,14 +45,8 @@ test('additive bootstrap preserves owner data, seed edits and slug collisions wh
     return { id: key };
   });
   t.mock.method(db.category, 'findFirstOrThrow', async () => ({ id: 'demo/fashion' }));
-  t.mock.method(db.product, 'count', async (args: Prisma.ProductCountArgs) => {
-    const products = [...records.values()].filter((record) => record.storeId === args.where?.storeId);
-    const filter = args.where?.slug;
-    if (filter && typeof filter === 'object') {
-      if (Array.isArray(filter.in)) return products.filter((record) => filter.in.includes(record.slug)).length;
-      if (Array.isArray(filter.notIn)) return products.filter((record) => !filter.notIn.includes(record.slug)).length;
-    }
-    return products.length;
+  const count = t.mock.method(db.product, 'count', async () => {
+    throw new Error('Bootstrap must not query or validate product counts');
   });
   t.mock.method(db.product, 'upsert', async (args: Prisma.ProductUpsertArgs) => {
     const key = `${args.create.storeId}/${args.create.slug}`;
@@ -105,4 +99,15 @@ test('additive bootstrap preserves owner data, seed edits and slug collisions wh
     assert.equal(bytes[0], 0xff);
     assert.equal(bytes[1], 0xd8);
   }
+  for (const store of ['veloura', 'maison-elan']) {
+    for (let index = 0; index < 1001; index++) {
+      const product = { ...ownerProduct, id: `${store}-owner-${index}`, storeId: store, slug: `owner-${index}` };
+      records.set(`${store}/${product.slug}`, product);
+    }
+  }
+  const largeCatalog = new Map(records);
+  await ensureDemoData();
+  await ensureDemoData();
+  assert.deepEqual(records, largeCatalog);
+  assert.equal(count.mock.callCount(), 0);
 });

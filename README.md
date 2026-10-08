@@ -145,8 +145,14 @@ With `DEMO_MODE=true` on Render, startup creates only missing entries from the
 products (including slug collisions), images, categories, store settings and
 account permissions are not overwritten. Existing IDs, prices, stock, customers
 and order relations are preserved. Additional owner-created products are left
-untouched and do not block startup; a store may legitimately contain more than
-30 products. Bootstrap verifies the seed slugs, not the store's total product count.
+untouched and do not block startup. There is no bootstrap product-count check or
+store-size cap: 30 describes initial demo data only. The existing `DEMO_MODE=true`
+create-missing contract restores a deleted seed entry on startup; disable demo
+mode when ongoing seed restoration is not desired. Existing entries are never
+overwritten, and additional products are never classified as seed-owned.
+Public catalogs and admin lists paginate across the complete matching catalog;
+their page-size limits are not store-size limits. Admin product lists default to
+all statuses and support server-side search, category and status filters.
 No schema migrations, database reset, or test orders are needed.
 Verify the deployed API totals; a local seed is not evidence of production data.
 
@@ -158,9 +164,9 @@ npm run test:bootstrap:database --workspace server
 ```
 
 The database regression requires an already bootstrapped local database and
-rejects non-local database hosts. It creates an owner category/product inside
-a transaction, runs the actual bootstrap twice, verifies existing data and
-public-catalog eligibility are unchanged, and rolls back all test writes.
+rejects non-local database hosts. It adds owner products successively inside
+a transaction, runs the actual bootstrap after each addition, verifies existing
+data, duplicate prevention and public/admin pagination, and rolls back all test writes.
 
 Product photographs are bundled under `server/public/demo` and served at
 `/demo-assets` so ephemeral uploads and third-party image availability cannot

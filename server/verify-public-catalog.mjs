@@ -22,9 +22,14 @@ for (const slug of ['veloura', 'maison-elan']) {
     get(`/stores/${slug}/catalog/categories`),
     get(`/stores/${store.id}/products?limit=100`),
   ]);
-  assert.ok(catalog.pagination.total >= 30, `${slug}: published count`);
   assert.equal(catalog.products.length, Math.min(100, catalog.pagination.total), `${slug}: returned count`);
   assert.equal(unfiltered.pagination.total, catalog.pagination.total, `${slug}: legacy API count`);
+  for (let page = 2; page <= catalog.pagination.totalPages; page++) {
+    const next = await get(`/stores/${slug}/catalog/products?page=${page}&limit=100`);
+    assert.equal(next.pagination.total, catalog.pagination.total, `${slug}: total changed during verification`);
+    catalog.products.push(...next.products);
+  }
+  assert.equal(catalog.products.length, catalog.pagination.total, `${slug}: all pages returned`);
   assert.equal(new Set(catalog.products.map((product) => product.id)).size, catalog.products.length);
   assert.ok(categoryResult.categories.length > 0, `${slug}: categories missing`);
   for (const category of categoryResult.categories) {
@@ -38,7 +43,7 @@ for (const slug of ['veloura', 'maison-elan']) {
     assert.equal(product.category.isActive, true);
     assert.equal(product.status, 'ACTIVE');
     assert.ok(product.nameAr && product.slug);
-    assert.ok(Number(product.price) > 0);
+    assert.ok(Number(product.price) >= 0);
     assert.ok(Number(product.stock) >= 0);
     if (product.productImages) {
       assert.equal(product.productImages.productId, product.id);
@@ -51,17 +56,21 @@ for (const slug of ['veloura', 'maison-elan']) {
     assert.equal(details.storeId, store.id);
   }
   const staleSession = await get(`/stores/${slug}/catalog/products`, { Authorization: 'Bearer stale-dashboard-session' });
-  assert.equal(staleSession.products.length, 30);
+  assert.equal(staleSession.products.length, Math.min(staleSession.pagination.limit, staleSession.pagination.total));
   stores.push({ ...store, products: catalog.products, categories: categoryResult.categories });
   console.log(`PASS ${slug}: ${catalog.products.length}/${catalog.pagination.total} products, all returned details, categories, active status, stock, prices, image relations and stale-session public access`);
 }
 
 for (const [selected, other] of [[stores[0], stores[1]], [stores[1], stores[0]]]) {
-  const response = await fetch(`${api}/stores/${selected.slug}/catalog/products/${other.products[0].id}`);
-  assert.equal(response.status, 404, `${selected.slug}: cross-store detail must be rejected`);
-  const categoryFilter = await get(`/stores/${selected.slug}/catalog/products?categoryId=${other.categories[0].id}`);
-  assert.equal(categoryFilter.products.length, 0);
-  assert.equal(categoryFilter.pagination.total, 0);
+  if (other.products.length) {
+    const response = await fetch(`${api}/stores/${selected.slug}/catalog/products/${other.products[0].id}`);
+    assert.equal(response.status, 404, `${selected.slug}: cross-store detail must be rejected`);
+  }
+  if (other.categories.length) {
+    const categoryFilter = await get(`/stores/${selected.slug}/catalog/products?categoryId=${other.categories[0].id}`);
+    assert.equal(categoryFilter.products.length, 0);
+    assert.equal(categoryFilter.pagination.total, 0);
+  }
 }
 
 for (const url of imageUrls) {

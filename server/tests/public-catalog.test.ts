@@ -12,10 +12,35 @@ import publicCatalogRouter from '../src/routes/api/public-catalog';
 import { TenantIsolation, authenticate, requireRole } from '../src/middleware/auth';
 import { config } from '../src/lib/config';
 import { errorHandler } from '../src/utils/errorHandler';
+import { productService } from '../src/services/product.service';
 
 const storeId = 'caaaaaaaaaaaaaaaaaaaaaaaa';
 const otherStoreId = 'cbbbbbbbbbbbbbbbbbbbbbbbb';
 const productId = 'cccccccccccccccccccccccc';
+
+for (const total of [0, 31, 50, 200, 500, 1001]) {
+  test(`public and admin pagination supports ${total} matching products without a store-size cap`, async (t) => {
+    t.mock.method(storeService, 'getPublicStore', async () => ({ id: storeId }));
+    t.mock.method(db.product, 'count', async () => total);
+    t.mock.method(db.product, 'findMany', async (args: Prisma.ProductFindManyArgs) => {
+      assert.equal(args.where?.storeId, storeId);
+      const skip = args.skip || 0;
+      const take = args.take || 0;
+      return Array.from({ length: Math.min(take, Math.max(0, total - skip)) },
+        (_, index) => ({ id: `product-${skip + index}`, storeId }));
+    });
+    for (const page of [1, 2, Math.max(1, Math.ceil(total / 30)), Math.ceil(total / 30) + 1]) {
+      for (const list of [
+        () => publicCatalogService.getProducts('veloura', { page, limit: 30 }),
+        () => productService.getProducts({ storeId, page, limit: 30, status: 'ALL' }),
+      ]) {
+        const result = await list();
+        assert.deepEqual(result.pagination, { page, limit: 30, total, totalPages: Math.ceil(total / 30) });
+        assert.equal(result.products.length, Math.min(30, Math.max(0, total - (page - 1) * 30)));
+      }
+    }
+  });
+}
 
 test('public product list scopes both products and categories and never selects internal costs', async (t) => {
   t.mock.method(storeService, 'getPublicStore', async () => ({ id: storeId }));
