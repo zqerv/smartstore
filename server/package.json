@@ -19,6 +19,7 @@
     "test:features": "node test-features.js",
     "test:cors": "node --import tsx --test tests/cors.test.ts",
     "test:catalog": "node --require ./tests/mock-database.cjs --import tsx --test tests/public-catalog.test.ts tests/demo-catalog.test.ts",
+    "test:bootstrap:database": "node --import tsx --test tests/bootstrap-database.test.ts",
     "verify:public-catalog": "node verify-public-catalog.mjs"
   },
   "license": "MIT",

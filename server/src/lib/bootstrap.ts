@@ -276,20 +276,7 @@ async function ensureLuxuryStores(
   for (const [storeIndex, demo] of LUXURY_DEMOS.entries()) {
     const store = await tx.store.upsert({
       where: { slug: demo.slug },
-      update: {
-        name: demo.name,
-        description: demo.description,
-        phone: demo.phone,
-        email: demo.email,
-        address: demo.address,
-        city: 'Baghdad',
-        primaryColor: demo.primaryColor,
-        secondaryColor: demo.secondaryColor,
-        status: 'ACTIVE',
-        defaultCurrency: 'IQD',
-        locale: 'ar-IQ',
-        dir: 'rtl',
-      },
+      update: {},
       create: {
         name: demo.name,
         slug: demo.slug,
@@ -308,16 +295,9 @@ async function ensureLuxuryStores(
       },
     });
 
-    const unexpectedProducts = await tx.product.count({
-      where: { storeId: store.id, slug: { notIn: demo.products.map(([slug]) => slug) } },
-    });
-    if (unexpectedProducts) {
-      throw new Error(`Refusing to replace business data: ${demo.slug} contains ${unexpectedProducts} products outside the managed demo catalog`);
-    }
-
     const owner = await tx.user.upsert({
       where: { email: demo.owner.email },
-      update: { isActive: true, storeId: store.id },
+      update: {},
       create: {
         email: demo.owner.email,
         phone: demo.owner.phone,
@@ -330,13 +310,13 @@ async function ensureLuxuryStores(
     });
     await tx.storeAdmin.upsert({
       where: { userId_storeId: { userId: owner.id, storeId: store.id } },
-      update: { permissionLevel: 'OWNER' },
+      update: {},
       create: { userId: owner.id, storeId: store.id, permissionLevel: 'OWNER' },
     });
 
     const staff = await tx.user.upsert({
       where: { email: demo.staff.email },
-      update: { isActive: true, storeId: store.id },
+      update: {},
       create: {
         email: demo.staff.email,
         phone: demo.staff.phone,
@@ -349,7 +329,7 @@ async function ensureLuxuryStores(
     });
     await tx.storeAdmin.upsert({
       where: { userId_storeId: { userId: staff.id, storeId: store.id } },
-      update: { permissionLevel: 'STAFF' },
+      update: {},
       create: { userId: staff.id, storeId: store.id, permissionLevel: 'STAFF' },
     });
 
@@ -357,7 +337,7 @@ async function ensureLuxuryStores(
     for (const [index, [slug, nameAr, nameEn]] of demo.categories.entries()) {
       const category = await tx.category.upsert({
         where: { storeId_slug: { storeId: store.id, slug } },
-        update: { nameAr, nameEn, sortOrder: index + 1, isActive: true },
+        update: {},
         create: { storeId: store.id, slug, nameAr, nameEn, sortOrder: index + 1, isActive: true },
       });
       categoryBySlug.set(slug, category.id);
@@ -366,13 +346,10 @@ async function ensureLuxuryStores(
     for (const [productIndex, [slug, nameAr, nameEn, categorySlug, price, stock, description, imageFile]] of demo.products.entries()) {
       const categoryId = categoryBySlug.get(categorySlug);
       if (!categoryId) throw new Error(`Missing category ${categorySlug} for ${demo.slug}/${slug}`);
-      const product = await tx.product.upsert({
+      // A seed slug is a creation key, not proof of ownership of an existing record.
+      await tx.product.upsert({
         where: { storeId_slug: { storeId: store.id, slug } },
-        update: {
-          categoryId, nameAr, nameEn, status: 'ACTIVE',
-          descriptionAr: description, descriptionEn: description,
-          isFeatured: productIndex < 4,
-        },
+        update: {},
         create: {
           storeId: store.id,
           categoryId,
@@ -386,16 +363,21 @@ async function ensureLuxuryStores(
           isFeatured: productIndex < 4,
           descriptionAr: description,
           descriptionEn: description,
+          productImages: {
+            create: { url: `/demo-assets/${imageFile}`, alt: nameEn, isPrimary: true, order: productIndex },
+          },
         },
       });
-      await tx.productImage.upsert({
-        where: { productId: product.id },
-        update: { url: `/demo-assets/${imageFile}`, alt: nameEn, isPrimary: true },
-        create: { productId: product.id, url: `/demo-assets/${imageFile}`, alt: nameEn, isPrimary: true, order: productIndex },
-      });
     }
-    const count = await tx.product.count({ where: { storeId: store.id } });
-    if (count !== 30) throw new Error(`Expected exactly 30 products for ${demo.slug}, found ${count}`);
-    logger.info(`Demo catalog verified: ${demo.slug}, ${count} products`);
+    const catalogCount = await tx.product.count({
+      where: { storeId: store.id, slug: { in: demo.products.map(([slug]) => slug) } },
+    });
+    if (catalogCount !== demo.products.length) {
+      throw new Error(`Incomplete demo catalog for ${demo.slug}: expected ${demo.products.length} seed slugs, found ${catalogCount}`);
+    }
+    const additionalCount = await tx.product.count({
+      where: { storeId: store.id, slug: { notIn: demo.products.map(([slug]) => slug) } },
+    });
+    logger.info(`Demo catalog ensured: ${demo.slug}, ${catalogCount} seed slugs present, ${additionalCount} additional products preserved`);
   }
 }

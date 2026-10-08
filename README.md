@@ -139,12 +139,28 @@ black/gold layout with each store's own hero colors and real catalog photography
 Dashboard styling is unchanged. Checkout waits for store resolution before
 displaying missing-store or missing-cart feedback.
 
-With `DEMO_MODE=true` on Render, startup safely upserts exactly 30 managed
-products in each of Veloura and Maison Élan using the backend's `DATABASE_URL`.
-Existing product IDs, prices, stock and order relations are preserved. Unknown
-products in either demo store cause a transaction rollback, not deletion.
+With `DEMO_MODE=true` on Render, startup creates only missing entries from the
+30-product seed catalog in each of Veloura and Maison Élan using the backend's
+`DATABASE_URL`. Seed slugs are creation keys, not ownership markers: existing
+products (including slug collisions), images, categories, store settings and
+account permissions are not overwritten. Existing IDs, prices, stock, customers
+and order relations are preserved. Additional owner-created products are left
+untouched and do not block startup; a store may legitimately contain more than
+30 products. Bootstrap verifies the seed slugs, not the store's total product count.
 No schema migrations, database reset, or test orders are needed.
 Verify the deployed API totals; a local seed is not evidence of production data.
+
+Bootstrap regression checks:
+
+```bash
+npm run test:catalog --workspace server
+npm run test:bootstrap:database --workspace server
+```
+
+The database regression requires an already bootstrapped local database and
+rejects non-local database hosts. It creates an owner category/product inside
+a transaction, runs the actual bootstrap twice, verifies existing data and
+public-catalog eligibility are unchanged, and rolls back all test writes.
 
 Product photographs are bundled under `server/public/demo` and served at
 `/demo-assets` so ephemeral uploads and third-party image availability cannot
