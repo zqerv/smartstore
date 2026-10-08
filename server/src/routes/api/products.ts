@@ -45,8 +45,12 @@ const productCreateSchema = z.object({
   categoryId: z.string().cuid(),
   nameAr: z.string().trim().min(1).max(200),
   nameEn: z.string().trim().max(200).optional(),
+  descriptionAr: z.string().max(5000).nullable().optional(),
+  descriptionEn: z.string().max(5000).nullable().optional(),
   slug: z.string().trim().max(200).optional(),
+  type: z.enum(['SIMPLE', 'VARIABLE']).optional(),
   price: z.coerce.number().nonnegative(),
+  compareAtPrice: z.coerce.number().nonnegative().nullable().optional(),
   stock: z.coerce.number().int().nonnegative().optional(),
   quantity: z.coerce.number().int().nonnegative().optional(),
   sku: z.string().trim().max(100).optional(),
@@ -156,7 +160,7 @@ router.get('/products/:productId',
 router.post('/stores/:storeId/products',
   TenantIsolation,
   authenticate,
-  requireRole('PLATFORM_ADMIN', 'STORE_OWNER', 'STORE_ADMIN', 'STAFF'),
+  requireRole('PLATFORM_ADMIN', 'STORE_OWNER', 'STORE_ADMIN'),
   verifyStoreOwnership,
   asyncHandler(async (req: Request, res: Response) => {
     const { storeId } = req.params;
@@ -171,7 +175,7 @@ router.post('/stores/:storeId/products',
 router.put('/products/:productId',
   TenantIsolation,
   authenticate,
-  requireRole('PLATFORM_ADMIN', 'STORE_OWNER', 'STORE_ADMIN', 'STAFF'),
+  requireRole('PLATFORM_ADMIN', 'STORE_OWNER', 'STORE_ADMIN'),
   verifyStoreOwnership,
   asyncHandler(async (req: Request, res: Response) => {
     const { productId } = req.params;
@@ -206,7 +210,7 @@ const imageSchema = z.object({
 router.put('/products/:productId/image',
   TenantIsolation,
   authenticate,
-  requireRole('PLATFORM_ADMIN', 'STORE_OWNER', 'STORE_ADMIN', 'STAFF'),
+  requireRole('PLATFORM_ADMIN', 'STORE_OWNER', 'STORE_ADMIN'),
   verifyStoreOwnership,
   asyncHandler(async (req: Request, res: Response) => {
     const product = await db.product.findUnique({ where: { id: req.params.productId }, select: { id: true, storeId: true } });
@@ -229,7 +233,7 @@ router.put('/products/:productId/image',
 router.delete('/products/:productId/image',
   TenantIsolation,
   authenticate,
-  requireRole('PLATFORM_ADMIN', 'STORE_OWNER', 'STORE_ADMIN', 'STAFF'),
+  requireRole('PLATFORM_ADMIN', 'STORE_OWNER', 'STORE_ADMIN'),
   verifyStoreOwnership,
   asyncHandler(async (req: Request, res: Response) => {
     const existing = await db.productImage.findUnique({ where: { productId: req.params.productId } });
@@ -285,7 +289,7 @@ router.get('/products/:productId/variants',
 
 router.post('/products/:productId/variants',
   authenticate,
-  requireRole('PLATFORM_ADMIN', 'STORE_OWNER', 'STORE_ADMIN', 'STAFF'),
+  requireRole('PLATFORM_ADMIN', 'STORE_OWNER', 'STORE_ADMIN'),
   asyncHandler(async (req: Request, res: Response) => {
     const product = await db.product.findUnique({
       where: { id: req.params.productId },
@@ -316,7 +320,7 @@ router.post('/products/:productId/variants',
 
 router.put('/products/:productId/variants/:variantId',
   authenticate,
-  requireRole('PLATFORM_ADMIN', 'STORE_OWNER', 'STORE_ADMIN', 'STAFF'),
+  requireRole('PLATFORM_ADMIN', 'STORE_OWNER', 'STORE_ADMIN'),
   verifyStoreOwnership,
   asyncHandler(async (req: Request, res: Response) => {
     const variant = await db.productVariant.findFirst({

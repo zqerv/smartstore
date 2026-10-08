@@ -55,6 +55,15 @@
 .vayron-demo-footer { display: flex; flex-direction: column; align-items: center; gap: 14px; padding: 28px 24px; border-top: 1px solid #dfc28a26; color: var(--vayron-muted); text-align: center; font-size: 11px; }
 .vayron-demo-footer > span:first-child, .vayron-demo-footer a { color: var(--vayron-gold); }
 
+.vayron-intro { position: fixed; z-index: 100; inset: 0; display: grid; place-content: center; justify-items: center; gap: 30px; color: #f5f1e8; background: #0c0d0e; transition: opacity .25s ease, visibility .25s ease; }
+.vayron-intro-leaving { opacity: 0; visibility: hidden; }
+.vayron-intro-lockup { display: grid; justify-items: center; gap: 12px; animation: vayron-intro-arrive .65s ease both; }
+.vayron-intro-lockup > span { color: var(--vayron-gold); font: 500 clamp(36px, 8vw, 58px)/1 "DM Sans", sans-serif; letter-spacing: .22em; }
+.vayron-intro-lockup > small { color: #b4b0a7; font: 10px/1.5 "DM Sans", sans-serif; letter-spacing: .16em; text-align: center; }
+.vayron-intro > button { min-height: 40px; padding: 8px 14px; border: 1px solid #dfc28a50; border-radius: 5px; color: #eee3cf; background: transparent; font-size: 11px; }
+.vayron-intro > button:hover { border-color: var(--vayron-gold); }
+@keyframes vayron-intro-arrive { from { opacity: 0; transform: translateY(9px); } to { opacity: 1; transform: translateY(0); } }
+
 @media (min-width: 700px) {
   .vayron-demo-hero { padding-block: 96px 84px; }
   .vayron-demo-section-heading { flex-direction: row; justify-content: space-between; align-items: flex-end; }
@@ -70,5 +79,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .vayron-intro { display: none; }
   .vayron-store-card, .vayron-store-link { transition: none; }
+  .vayron-intro-lockup { animation: none; }
 }

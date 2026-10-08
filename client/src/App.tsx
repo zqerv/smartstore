@@ -195,14 +195,17 @@ function App() {
     socket.on('connect', () => setSocketState('connected'));
     socket.on('disconnect', () => setSocketState('disconnected'));
     socket.on('connect_error', () => setSocketState('disconnected'));
-    const forwardOrderEvent = (detail: unknown) => {
-      window.dispatchEvent(new CustomEvent('smartstore:order', { detail }));
+    const forwardOrderEvent = (eventType: 'created' | 'updated') => (detail: unknown) => {
+      const payload = detail && typeof detail === 'object' ? detail as Record<string, unknown> : {};
+      window.dispatchEvent(new CustomEvent('smartstore:order', { detail: { ...payload, eventType } }));
     };
-    socket.on('order:created', forwardOrderEvent);
-    socket.on('order:updated', forwardOrderEvent);
+    const forwardCreatedOrder = forwardOrderEvent('created');
+    const forwardUpdatedOrder = forwardOrderEvent('updated');
+    socket.on('order:created', forwardCreatedOrder);
+    socket.on('order:updated', forwardUpdatedOrder);
     return () => {
-      socket.off('order:created', forwardOrderEvent);
-      socket.off('order:updated', forwardOrderEvent);
+      socket.off('order:created', forwardCreatedOrder);
+      socket.off('order:updated', forwardUpdatedOrder);
       socket.disconnect();
       setSocketState('off');
     };
@@ -239,6 +242,7 @@ function App() {
         <Route path="/platform/settings" element={<ProtectedShell allowedRoles={[UserRole.PLATFORM_ADMIN]}><SystemSettingsPage /></ProtectedShell>} />
         <Route path="/products/:productId" element={<ProductDetailsPage />} />
         <Route path="/products" element={<ProtectedShell allowedRoles={merchantRoles}><ResourcePage kind="products" /></ProtectedShell>} />
+        <Route path="/inventory" element={<ProtectedShell allowedRoles={storeAdministrators}><InventoryPage /></ProtectedShell>} />
         <Route path="/categories" element={<ProtectedShell allowedRoles={merchantRoles}><ResourcePage kind="categories" /></ProtectedShell>} />
         <Route path="/customers" element={<ProtectedShell allowedRoles={merchantRoles}><ResourcePage kind="customers" /></ProtectedShell>} />
         <Route path="/cart" element={<CartPage />} />
@@ -304,6 +308,7 @@ const navigation: { title: string; en: string; items: NavItem[] }[] = [
     en: 'Commerce',
     items: [
       { label: 'المنتجات', en: 'Products', path: '/products', icon: Package },
+      { label: 'المخزون', en: 'Inventory', path: '/inventory', icon: Box, roles: [UserRole.PLATFORM_ADMIN, UserRole.STORE_OWNER, UserRole.STORE_ADMIN] },
       { label: 'التصنيفات', en: 'Categories', path: '/categories', icon: Box },
       { label: 'الطلبات', en: 'Orders', path: '/orders', icon: ClipboardList },
       { label: 'العملاء', en: 'Customers', path: '/customers', icon: Users, roles: [UserRole.PLATFORM_ADMIN, UserRole.STORE_OWNER, UserRole.STORE_ADMIN, UserRole.STAFF] },
@@ -352,6 +357,54 @@ function ProtectedShell({ children, allowedRoles }: { children: ReactNode; allow
   const location = useLocation();
   const { locale } = useApp();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [pendingOrderCount, setPendingOrderCount] = useState(0);
+  const [orderBadgeUnavailable, setOrderBadgeUnavailable] = useState(false);
+  const [orderNotice, setOrderNotice] = useState<Record<string, unknown> | null>(null);
+  const noticeTimer = useRef<number | null>(null);
+  const seenOrderNotices = useRef(new Set<string>());
+
+  useEffect(() => {
+    const merchant = user && [UserRole.STORE_OWNER, UserRole.STORE_ADMIN, UserRole.STAFF].includes(user.role);
+    if (!merchant || !user.storeId) {
+      setPendingOrderCount(0);
+      setOrderBadgeUnavailable(false);
+      return;
+    }
+    let active = true;
+    const refreshCount = () => apiRequest<{ pendingOrders?: number }>(`/stores/${encodeURIComponent(user.storeId || '')}/stats`)
+      .then((stats) => {
+        if (!active) return;
+        setPendingOrderCount(Math.max(0, Number(stats.pendingOrders) || 0));
+        setOrderBadgeUnavailable(false);
+      })
+      .catch(() => {
+        if (active) {
+          setPendingOrderCount(0);
+          setOrderBadgeUnavailable(true);
+        }
+      });
+    void refreshCount();
+
+    const onOrderEvent = (event: Event) => {
+      const detail = (event as CustomEvent<Record<string, unknown>>).detail;
+      if (detail?.storeId !== user.storeId) return;
+      void refreshCount();
+      if (detail.eventType !== 'created') return;
+      const orderKey = String(detail.id || detail.orderNumber || '');
+      if (!orderKey || seenOrderNotices.current.has(orderKey)) return;
+      seenOrderNotices.current.add(orderKey);
+      setOrderNotice(detail);
+      if (noticeTimer.current !== null) window.clearTimeout(noticeTimer.current);
+      noticeTimer.current = window.setTimeout(() => setOrderNotice(null), 7_000);
+    };
+    window.addEventListener('smartstore:order', onOrderEvent);
+    return () => {
+      active = false;
+      window.removeEventListener('smartstore:order', onOrderEvent);
+      if (noticeTimer.current !== null) window.clearTimeout(noticeTimer.current);
+    };
+  }, [user?.role, user?.storeId]);
+
   if (!user) return <Navigate to="/login" replace state={{ from: location.pathname }} />;
   if (allowedRoles && !allowedRoles.includes(user.role)) return <Navigate to="/" replace />;
 
@@ -387,7 +440,9 @@ function ProtectedShell({ children, allowedRoles }: { children: ReactNode; allow
                   >
                     <Icon size={18} strokeWidth={1.8} />
                     <span>{locale === 'ar' ? label : en}</span>
-                    {path === '/orders' && <span className="nav-dot" />}
+                    {path === '/orders' && (orderBadgeUnavailable
+                      ? <span className="nav-count-unavailable" title={locale === 'ar' ? 'تعذر تحميل عدد الطلبات' : 'Unable to load order count'} aria-label={locale === 'ar' ? 'تعذر تحميل عدد الطلبات' : 'Unable to load order count'}>!</span>
+                      : pendingOrderCount > 0 && <span className="nav-order-count">{pendingOrderCount > 99 ? '99+' : pendingOrderCount}</span>)}
                   </Link>
                 ))}
               </div>
@@ -409,6 +464,15 @@ function ProtectedShell({ children, allowedRoles }: { children: ReactNode; allow
       </aside>
       <div className="main-area">
         <TopBar onMenu={() => setSidebarOpen(true)} />
+        {orderNotice && <div className="new-order-toast" role="status">
+          <span className="new-order-toast-icon"><ShoppingBag size={18} /></span>
+          <span className="new-order-toast-copy">
+            <strong>{locale === 'ar' ? 'تم استلام طلب جديد' : 'New order received'}</strong>
+            <small>{String(orderNotice.orderNumber || '')} · {String(orderNotice.customerName || '')} · {formatCurrency(orderNotice.total, locale)} · {Number(orderNotice.itemCount) || 0} {locale === 'ar' ? 'منتجات' : 'items'}</small>
+          </span>
+          <Link to="/orders" onClick={() => setOrderNotice(null)}>{locale === 'ar' ? 'عرض' : 'View'}</Link>
+          <button type="button" className="icon-button" aria-label={locale === 'ar' ? 'إغلاق الإشعار' : 'Dismiss notification'} onClick={() => setOrderNotice(null)}><X size={15} /></button>
+        </div>}
         <main className="page-content">{children}</main>
       </div>
     </div>
@@ -730,7 +794,7 @@ function DashboardPage() {
   return (
     <div className="dashboard-page">
       <div className="page-heading dashboard-heading">
-        <div><span className="eyebrow">{locale === 'ar' ? 'الأحد، ٤ أكتوبر ٢٠٢٦' : 'Sunday, October 4, 2026'}</span><h1>{locale === 'ar' ? `أهلاً ${firstName} 👋` : `Good to see you, ${firstName} 👋`}</h1><p>{locale === 'ar' ? 'هذه لمحة سريعة عن مساحة عملك اليوم.' : 'Here is a quick look at your workspace today.'}</p></div>
+        <div><span className="eyebrow">{new Date().toLocaleDateString(locale === 'ar' ? 'ar-IQ' : 'en-US', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</span><h1>{locale === 'ar' ? `أهلاً ${firstName} 👋` : `Good to see you, ${firstName} 👋`}</h1><p>{locale === 'ar' ? 'هذه لمحة سريعة عن مساحة عملك اليوم.' : 'Here is a quick look at your workspace today.'}</p></div>
         <button className="button button-outline" onClick={() => void refresh()} disabled={refreshing}>{refreshing ? <LoaderCircle className="spin" size={17} /> : <RefreshCw size={17} />}{locale === 'ar' ? 'تحديث البيانات' : 'Refresh data'}</button>
       </div>
 
@@ -1324,7 +1388,9 @@ const resourceDefinitions: Record<ResourceKind, ResourceDefinition> = {
     createPath: (storeId) => apiPath('stores', storeId, 'products'),
     fields: [
       { key: 'nameAr', label: 'الاسم بالعربية', required: true }, { key: 'nameEn', label: 'الاسم بالإنجليزية', required: true },
-      { key: 'categoryId', label: 'معرّف التصنيف', required: true }, { key: 'price', label: 'السعر', type: 'number', required: true },
+      { key: 'descriptionAr', label: 'الوصف بالعربية' }, { key: 'descriptionEn', label: 'الوصف بالإنجليزية' },
+      { key: 'categoryId', label: 'معرّف التصنيف', required: true }, { key: 'type', label: 'نوع المنتج', type: 'select', options: ['SIMPLE', 'VARIABLE'], required: true },
+      { key: 'price', label: 'السعر', type: 'number', required: true }, { key: 'compareAtPrice', label: 'السعر قبل الخصم', type: 'number' },
       { key: 'quantity', label: 'الكمية المتوفرة', type: 'number' }, { key: 'sku', label: 'رمز SKU' },
     ], collection: 'products', enabled: true, customerVisible: true,
   },
@@ -1456,6 +1522,10 @@ function ResourcePage({ kind }: { kind: ResourceKind }) {
   const [variantSaving, setVariantSaving] = useState(false);
   const [variantError, setVariantError] = useState('');
   const [productCategories, setProductCategories] = useState<Record<string, unknown>[]>([]);
+  const [selectedOrderId, setSelectedOrderId] = useState('');
+  const [selectedOrder, setSelectedOrder] = useState<Record<string, unknown> | null>(null);
+  const [orderDetailsLoading, setOrderDetailsLoading] = useState(false);
+  const [orderDetailsError, setOrderDetailsError] = useState('');
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
   const [paging, setPaging] = useState<{ total: number; totalPages: number } | null>(null);
@@ -1500,6 +1570,20 @@ function ResourcePage({ kind }: { kind: ResourceKind }) {
     }
   }, [activeStoreId, definition.collection, definition.enabled, kind, path, page, paginated, debouncedSearch]);
 
+  const loadOrderDetails = useCallback(async (orderId: string) => {
+    setOrderDetailsLoading(true);
+    setOrderDetailsError('');
+    try {
+      const details = await apiRequest<Record<string, unknown>>(`/orders/${encodeURIComponent(orderId)}`);
+      setSelectedOrder(details);
+    } catch (error) {
+      setSelectedOrder(null);
+      setOrderDetailsError(error instanceof Error ? error.message : 'Unable to load this order.');
+    } finally {
+      setOrderDetailsLoading(false);
+    }
+  }, []);
+
   useEffect(() => { void load(); }, [load]);
 
   useEffect(() => {
@@ -1507,11 +1591,24 @@ function ResourcePage({ kind }: { kind: ResourceKind }) {
       const detail = (event as CustomEvent<{ storeId?: string; customerId?: string }>).detail;
       const relevantToStore = Boolean(activeStoreId && detail?.storeId === activeStoreId);
       const relevantToCustomer = Boolean(customerId && detail?.customerId === customerId);
-      if (kind === 'orders' && (relevantToStore || relevantToCustomer)) void load();
+      if (kind === 'orders' && (relevantToStore || relevantToCustomer)) {
+        void load();
+        if (selectedOrderId && String((detail as { id?: string }).id || '') === selectedOrderId) {
+          void loadOrderDetails(selectedOrderId);
+        }
+      }
     };
     window.addEventListener('smartstore:order', refreshOnOrderEvent);
     return () => window.removeEventListener('smartstore:order', refreshOnOrderEvent);
-  }, [activeStoreId, customerId, kind, load]);
+  }, [activeStoreId, customerId, kind, load, loadOrderDetails, selectedOrderId]);
+
+  function openOrder(record: Record<string, unknown>) {
+    const orderId = String(record.id || '');
+    if (!orderId) return;
+    setSelectedOrderId(orderId);
+    setSelectedOrder(null);
+    void loadOrderDetails(orderId);
+  }
 
   async function createRecord(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -1694,6 +1791,7 @@ function ResourcePage({ kind }: { kind: ResourceKind }) {
           body: JSON.stringify({ reason: 'Cancelled by customer' }),
         });
         await load();
+        if (selectedOrderId === recordId) await loadOrderDetails(recordId);
         return;
       }
       const transitions: Record<string, string> = {
@@ -1720,6 +1818,18 @@ function ResourcePage({ kind }: { kind: ResourceKind }) {
       await apiRequest(route, { method: 'DELETE' });
     }
     await load();
+    if (kind === 'orders' && selectedOrderId === recordId) await loadOrderDetails(recordId);
+  }
+
+  async function cancelOrderRecord(record: Record<string, unknown>) {
+    const orderId = String(record.id || '');
+    if (!orderId || !window.confirm(locale === 'ar' ? 'هل تريد إلغاء هذا الطلب؟' : 'Are you sure you want to cancel this order?')) return;
+    await apiRequest(`/orders/${encodeURIComponent(orderId)}/cancel`, {
+      method: 'PATCH',
+      body: JSON.stringify({ reason: 'Cancelled by store' }),
+    });
+    await load();
+    if (selectedOrderId === orderId) await loadOrderDetails(orderId);
   }
 
   return (
@@ -1743,7 +1853,9 @@ function ResourcePage({ kind }: { kind: ResourceKind }) {
             {loading ? <div className="table-state"><LoaderCircle size={24} className="spin" /><span>{locale === 'ar' ? 'جارٍ تحميل البيانات الحقيقية...' : 'Loading live records...'}</span></div>
               : problem ? <div className="table-state empty-state"><span className="empty-illustration"><Icon size={25} /></span><strong>{locale === 'ar' ? 'تعذّر تحميل البيانات' : 'Unable to load records'}</strong><span>{locale === 'ar' ? 'أعاد API خطأً لهذا الطلب. لم نستخدم بيانات تجريبية.' : 'The API returned an error for this request. No sample records are shown.'}</span><button className="button button-outline button-small" onClick={() => void load()}><RefreshCw size={15} />{locale === 'ar' ? 'إعادة المحاولة' : 'Try again'}</button></div>
               : filteredItems.length === 0 ? <div className="table-state empty-state"><span className="empty-illustration"><Icon size={25} /></span><strong>{locale === 'ar' ? (items.length ? 'لا توجد نتائج مطابقة' : `لا توجد ${definition.title} بعد`) : (items.length ? 'No matching results' : `No ${definition.en.toLowerCase()} yet`)}</strong><span>{locale === 'ar' ? (items.length ? 'جرّب عبارة بحث أخرى.' : 'عند توفر بيانات من API ستظهر هنا مباشرة.') : (items.length ? 'Try a different search.' : 'Records from the API will appear here as soon as they exist.')}</span></div>
-              : <RecordTable items={filteredItems} kind={kind} locale={locale} isCustomer={isCustomer} onQr={kind === 'tables' ? setQrRecord : undefined} onEdit={canEditRecords ? setEditingRecord : undefined} onChangeTable={TABLES_ENABLED && kind === 'orders' && canActOnRecords ? (record) => { void changeOrderTable(record).catch((requestError) => setProblem(requestError instanceof ApiError ? requestError : new ApiError(requestError instanceof Error ? requestError.message : 'Action failed.', 0))); } : undefined} onVariants={kind === 'products' && canActOnRecords ? (record) => { void loadVariants(record); } : undefined} onAction={canActOnRecords ? (record) => { void actOnRecord(record).catch((requestError) => setProblem(requestError instanceof ApiError ? requestError : new ApiError(requestError instanceof Error ? requestError.message : 'Action failed.', 0))); } : undefined} />}
+              : kind === 'orders'
+                ? <OrderCards items={filteredItems} locale={locale} isCustomer={isCustomer} onOpen={openOrder} onAction={(record) => { void actOnRecord(record).catch((requestError) => setProblem(requestError instanceof ApiError ? requestError : new ApiError(requestError instanceof Error ? requestError.message : 'Action failed.', 0))); }} />
+                : <RecordTable items={filteredItems} kind={kind} locale={locale} isCustomer={isCustomer} onQr={kind === 'tables' ? setQrRecord : undefined} onEdit={canEditRecords ? setEditingRecord : undefined} onVariants={kind === 'products' && canActOnRecords ? (record) => { void loadVariants(record); } : undefined} onAction={canActOnRecords ? (record) => { void actOnRecord(record).catch((requestError) => setProblem(requestError instanceof ApiError ? requestError : new ApiError(requestError instanceof Error ? requestError.message : 'Action failed.', 0))); } : undefined} />}
             {!problem && Boolean(payload) && !items.length && <p className="table-footnote">{locale === 'ar' ? 'لا توجد سجلات في الاستجابة الحالية.' : 'The API returned no records.'}</p>}
             {paging && paging.total > 0 && <Pagination page={page} totalPages={paging.totalPages} total={paging.total} loading={loading} locale={locale} onChange={setPage} />}
           </section>
@@ -1770,8 +1882,293 @@ function ResourcePage({ kind }: { kind: ResourceKind }) {
           <div className="modal-actions"><button type="button" className="button button-quiet" onClick={() => setVariantEditing(null)}>{locale === 'ar' ? 'إلغاء' : 'Cancel'}</button><button className="button button-primary" disabled={variantSaving}>{variantSaving ? <LoaderCircle className="spin" size={17} /> : <Check size={17} />}{locale === 'ar' ? 'حفظ المتغير' : 'Save variant'}</button></div>
         </form>}
       </section></div>}
+      {selectedOrderId && <OrderDetailsDialog
+        order={selectedOrder}
+        loading={orderDetailsLoading}
+        error={orderDetailsError}
+        locale={locale}
+        canCancel={isCustomer || user?.role !== UserRole.STAFF}
+        canChangeTable={TABLES_ENABLED && canActOnRecords}
+        onClose={() => { setSelectedOrderId(''); setSelectedOrder(null); setOrderDetailsError(''); }}
+        onAdvance={() => {
+          if (selectedOrder) void actOnRecord(selectedOrder).catch((requestError) => {
+            setOrderDetailsError(requestError instanceof Error ? requestError.message : 'Unable to update order status.');
+          });
+        }}
+        onCancel={() => {
+          if (selectedOrder) void (isCustomer
+            ? actOnRecord(selectedOrder)
+            : cancelOrderRecord(selectedOrder)).catch((requestError) => {
+              setOrderDetailsError(requestError instanceof Error ? requestError.message : 'Unable to cancel this order.');
+            });
+        }}
+        onChangeTable={() => {
+          if (selectedOrder) void changeOrderTable(selectedOrder)
+            .then(() => loadOrderDetails(selectedOrderId))
+            .catch((requestError) => setOrderDetailsError(requestError instanceof Error ? requestError.message : 'Unable to change table.'));
+        }}
+      />}
     </div>
   );
+}
+
+function InventoryPage() {
+  const { user, locale, storeId } = useApp();
+  const activeStoreId = user?.storeId || storeId;
+  const [rows, setRows] = useState<Array<{ product: Record<string, unknown>; variants: Record<string, unknown>[] }>>([]);
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalProducts, setTotalProducts] = useState(0);
+  const [loading, setLoading] = useState(false);
+  const [problem, setProblem] = useState('');
+  const [notice, setNotice] = useState('');
+  const [savingKey, setSavingKey] = useState('');
+  const pageSize = 20;
+
+  const load = useCallback(async () => {
+    if (!activeStoreId) {
+      setRows([]);
+      return;
+    }
+    setLoading(true);
+    setProblem('');
+    try {
+      const response = await apiRequest<unknown>(`/stores/${encodeURIComponent(activeStoreId)}/products?status=ALL&page=${page}&limit=${pageSize}`);
+      const products = extractItems(response, 'products').filter((item): item is Record<string, unknown> => !!item && typeof item === 'object');
+      const nextRows = await Promise.all(products.map(async (product) => {
+        if (product.type !== 'VARIABLE') return { product, variants: [] };
+        const result = await apiRequest<unknown>(`/products/${encodeURIComponent(String(product.id))}/variants`);
+        return {
+          product,
+          variants: extractItems(result, 'variants').filter((item): item is Record<string, unknown> => !!item && typeof item === 'object'),
+        };
+      }));
+      const metadata = response && typeof response === 'object'
+        ? (response as Record<string, unknown>).pagination as Record<string, unknown> | undefined
+        : undefined;
+      setTotalPages(Math.max(1, Number(metadata?.totalPages) || 1));
+      setTotalProducts(Number(metadata?.total) || 0);
+      setRows(nextRows);
+    } catch (error) {
+      setProblem(error instanceof Error ? error.message : (locale === 'ar' ? 'تعذّر تحميل بيانات المخزون.' : 'Unable to load inventory.'));
+      setRows([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [activeStoreId, locale, page]);
+
+  useEffect(() => { void load(); }, [load]);
+
+  async function saveStock(event: FormEvent<HTMLFormElement>, productId: string, variantId?: string) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const stock = Number(form.get('stock'));
+    if (!Number.isInteger(stock) || stock < 0) {
+      setProblem(locale === 'ar' ? 'أدخل كمية صحيحة لا تقل عن صفر.' : 'Enter a whole-number quantity of zero or more.');
+      return;
+    }
+    const key = variantId || productId;
+    setSavingKey(key);
+    setProblem('');
+    setNotice('');
+    try {
+      if (variantId) {
+        await apiRequest(`/products/${encodeURIComponent(productId)}/variants/${encodeURIComponent(variantId)}`, {
+          method: 'PUT',
+          body: JSON.stringify({ stock }),
+        });
+      } else {
+        await apiRequest(`/products/${encodeURIComponent(productId)}`, {
+          method: 'PUT',
+          body: JSON.stringify({ stock }),
+        });
+      }
+      setNotice(locale === 'ar' ? 'تم تحديث المخزون.' : 'Stock updated.');
+      await load();
+    } catch (error) {
+      setProblem(error instanceof Error ? error.message : (locale === 'ar' ? 'تعذّر تحديث المخزون.' : 'Unable to update stock.'));
+    } finally {
+      setSavingKey('');
+    }
+  }
+
+  const ar = locale === 'ar';
+  return <div className="resource-page">
+    <div className="page-heading">
+      <div><span className="eyebrow">{ar ? 'إدارة المتجر' : 'Store management'}</span><h1>{ar ? 'المخزون' : 'Inventory'}</h1><p>{ar ? 'تابع الكميات المتاحة ونفاد المخزون ونقاط إعادة الطلب.' : 'Review available quantities, out-of-stock products, and low-stock alerts.'}</p></div>
+      <button className="button button-outline" onClick={() => void load()} disabled={loading}>{loading ? <LoaderCircle size={16} className="spin" /> : <RefreshCw size={16} />}{ar ? 'تحديث' : 'Refresh'}</button>
+    </div>
+    {!activeStoreId && <div className="alert alert-info"><Store size={17} />{ar ? 'لا يوجد متجر مرتبط بهذا الحساب.' : 'No store is associated with this account.'}</div>}
+    {problem && <div className="alert alert-error" role="alert"><CircleHelp size={17} />{problem}<button type="button" className="text-button" onClick={() => void load()}>{ar ? 'إعادة المحاولة' : 'Retry'}</button></div>}
+    {notice && <div className="alert alert-info" role="status"><Check size={17} />{notice}</div>}
+    <section className="inventory-list">
+      {loading ? <div className="panel table-state" role="status"><LoaderCircle size={23} className="spin" />{ar ? 'جارٍ تحميل المخزون...' : 'Loading inventory...'}</div>
+        : rows.length === 0 ? <div className="panel table-state empty-state"><Package size={25} /><strong>{ar ? 'لا توجد منتجات' : 'No products found'}</strong><span>{ar ? 'ستظهر المنتجات المسجلة في متجرك هنا.' : 'Products registered in your store will appear here.'}</span></div>
+          : rows.map(({ product, variants }) => {
+            const activeVariants = variants.filter((variant) => variant.isActive !== false);
+            const hasVariants = variants.length > 0;
+            const stock = hasVariants ? activeVariants.reduce((total, variant) => total + (Number(variant.stock) || 0), 0) : Number(product.stock) || 0;
+            const lowThreshold = Number(product.lowStockThreshold) > 0 ? Number(product.lowStockThreshold) : 5;
+            const status = stock <= 0 ? 'out' : stock <= lowThreshold ? 'low' : 'available';
+            const image = assetUrl((product.productImages as Record<string, unknown> | undefined)?.url);
+            const productName = String((ar ? product.nameAr : product.nameEn) || product.nameAr || product.nameEn || '');
+            const productId = String(product.id || '');
+            return <article className="panel inventory-card" key={productId}>
+              <header className="inventory-product-heading">
+                <span className="inventory-product-image">{image ? <img src={image} alt="" /> : <Package size={20} />}</span>
+                <span className="inventory-product-name"><strong>{productName}</strong><small>{String(product.sku || product.slug || '')}</small></span>
+                <span className={`inventory-stock-state inventory-stock-${status}`}>{status === 'out' ? (ar ? 'نفد المخزون' : 'Out of stock') : status === 'low' ? (ar ? 'مخزون منخفض' : 'Low stock') : (ar ? 'متوفر' : 'In stock')}</span>
+              </header>
+              <div className="inventory-stock-summary">
+                <span>{ar ? 'المتاح' : 'Available'} <strong>{stock}</strong></span>
+                {status === 'low' && <span>{ar ? `حد التنبيه ${lowThreshold}` : `Alert threshold ${lowThreshold}`}</span>}
+              </div>
+              {hasVariants ? <div className="inventory-variants">
+                {variants.map((variant) => {
+                  const variantStock = Number(variant.stock) || 0;
+                  const variantStatus = variantStock <= 0 ? 'out' : variantStock <= lowThreshold ? 'low' : 'available';
+                  const variantId = String(variant.id || '');
+                  return <form className={`inventory-variant ${variant.isActive === false ? 'inventory-variant-inactive' : ''}`} key={variantId} onSubmit={(event) => void saveStock(event, productId, variantId)}>
+                    <span className="inventory-variant-copy"><strong>{String(variant.name || variant.options || '')}</strong><small>{String(variant.options || '')}{variant.sku ? ` · ${String(variant.sku)}` : ''}</small></span>
+                    <span className={`inventory-stock-state inventory-stock-${variantStatus}`}>{variant.isActive === false ? (ar ? 'مؤرشف' : 'Archived') : variantStatus === 'out' ? (ar ? 'نفد' : 'Out') : variantStatus === 'low' ? (ar ? 'منخفض' : 'Low') : (ar ? 'متوفر' : 'Available')}</span>
+                    <label className="inventory-stock-input"><span>{ar ? 'الكمية' : 'Qty'}</span><input name="stock" type="number" min="0" step="1" required defaultValue={variantStock} disabled={variant.isActive === false || savingKey === variantId} /></label>
+                    {variant.isActive !== false && <button className="button button-outline button-small" disabled={savingKey === variantId}>{ar ? 'حفظ' : 'Save'}</button>}
+                  </form>;
+                })}
+              </div> : <form className="inventory-variant inventory-base-stock" onSubmit={(event) => void saveStock(event, productId)}>
+                <span className="inventory-variant-copy"><strong>{ar ? 'المخزون الأساسي' : 'Base stock'}</strong><small>{String(product.status || '')}</small></span>
+                <label className="inventory-stock-input"><span>{ar ? 'الكمية' : 'Qty'}</span><input name="stock" type="number" min="0" step="1" required defaultValue={Number(product.stock) || 0} disabled={savingKey === productId} /></label>
+                <button className="button button-outline button-small" disabled={savingKey === productId}>{ar ? 'حفظ' : 'Save'}</button>
+              </form>}
+            </article>;
+          })}
+    </section>
+    {totalPages > 1 && <Pagination page={page} totalPages={totalPages} total={totalProducts} loading={loading} locale={locale} onChange={setPage} />}
+  </div>;
+}
+
+function OrderCards({ items, locale, isCustomer, onOpen, onAction }: {
+  items: unknown[];
+  locale: Locale;
+  isCustomer: boolean;
+  onOpen: (record: Record<string, unknown>) => void;
+  onAction: (record: Record<string, unknown>) => void;
+}) {
+  const transitions: Record<string, string> = {
+    PENDING: 'CONFIRMED',
+    CONFIRMED: 'PREPARING',
+    PREPARING: 'READY',
+    READY: 'OUT_FOR_DELIVERY',
+    OUT_FOR_DELIVERY: 'DELIVERED',
+  };
+  const records = items.filter((item): item is Record<string, unknown> => !!item && typeof item === 'object');
+  return <div className="order-card-list">
+    {records.map((order) => {
+      const status = String(order.status || 'PENDING');
+      const customer = order.customer && typeof order.customer === 'object' ? order.customer as Record<string, unknown> : {};
+      const customerName = String(order.customerName || [customer.firstName, customer.lastName].filter(Boolean).join(' ') || (locale === 'ar' ? 'عميل' : 'Customer'));
+      const orderItems = Array.isArray(order.items) ? order.items as Record<string, unknown>[] : [];
+      const itemCount = orderItems.reduce((total, item) => total + (Number(item.quantity) || 0), 0);
+      const nextStatus = transitions[status];
+      const canCancel = isCustomer && !['DELIVERED', 'CANCELLED', 'REFUNDED'].includes(status);
+      const actionText = isCustomer
+        ? (locale === 'ar' ? 'إلغاء الطلب' : 'Cancel order')
+        : nextStatus || (locale === 'ar' ? 'مكتمل' : 'Complete');
+      return <article className="order-card" key={String(order.id || order.orderNumber)}>
+        <button type="button" className="order-card-open" onClick={() => onOpen(order)}>
+          <span className="order-card-heading"><strong dir="ltr">#{String(order.orderNumber || '')}</strong><span className={`status-chip status-${status.toLowerCase()}`}><i />{status.replaceAll('_', ' ')}</span></span>
+          <span className="order-card-customer"><User size={15} />{customerName}<small dir="ltr">{String(order.customerPhone || customer.phone || '')}</small></span>
+          <span className="order-card-meta"><span><ShoppingBag size={14} />{itemCount} {locale === 'ar' ? 'قطعة' : itemCount === 1 ? 'item' : 'items'}</span><span>{formatCurrency(order.total, locale)}</span></span>
+          <time dateTime={String(order.createdAt || '')}>{order.createdAt ? new Date(String(order.createdAt)).toLocaleString(locale === 'ar' ? 'ar-IQ' : 'en-US') : ''}</time>
+        </button>
+        <div className="order-card-actions">
+          <button type="button" className="button button-outline button-small" onClick={() => onOpen(order)}>{locale === 'ar' ? 'التفاصيل' : 'Details'}</button>
+          {(nextStatus || canCancel) && <button type="button" className={`button button-small ${canCancel ? 'button-quiet' : 'button-primary'}`} onClick={() => onAction(order)}>{actionText}</button>}
+        </div>
+      </article>;
+    })}
+  </div>;
+}
+
+function OrderDetailsDialog({ order, loading, error, locale, canCancel, canChangeTable, onClose, onAdvance, onCancel, onChangeTable }: {
+  order: Record<string, unknown> | null;
+  loading: boolean;
+  error: string;
+  locale: Locale;
+  canCancel: boolean;
+  canChangeTable: boolean;
+  onClose: () => void;
+  onAdvance: () => void;
+  onCancel: () => void;
+  onChangeTable: () => void;
+}) {
+  const status = String(order?.status || 'PENDING');
+  const transitions: Record<string, string> = {
+    PENDING: 'CONFIRMED',
+    CONFIRMED: 'PREPARING',
+    PREPARING: 'READY',
+    READY: 'OUT_FOR_DELIVERY',
+    OUT_FOR_DELIVERY: 'DELIVERED',
+  };
+  const customer = order?.customer && typeof order.customer === 'object' ? order.customer as Record<string, unknown> : {};
+  const items = Array.isArray(order?.items) ? order.items as Record<string, unknown>[] : [];
+  const history = Array.isArray(order?.statusHistory) ? order.statusHistory as Record<string, unknown>[] : [];
+  const name = String(order?.customerName || [customer.firstName, customer.lastName].filter(Boolean).join(' ') || '');
+  const dateLabel = (value: unknown) => value ? new Date(String(value)).toLocaleString(locale === 'ar' ? 'ar-IQ' : 'en-US') : '—';
+  const store = order?.store && typeof order.store === 'object' ? order.store as Record<string, unknown> : {};
+  const storeSlug = String(store.slug || '');
+  const storeHref = storeSlug ? `/store/${encodeURIComponent(storeSlug)}` : '';
+  return <div className="order-detail-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+    <section className="order-detail-dialog" role="dialog" aria-modal="true" aria-labelledby="order-detail-title" dir={locale === 'ar' ? 'rtl' : 'ltr'}>
+      <header className="order-detail-header">
+        <div><span className="eyebrow">{locale === 'ar' ? 'تفاصيل الطلب' : 'Order details'}</span><h2 id="order-detail-title" dir="ltr">#{String(order?.orderNumber || '…')}</h2></div>
+        <button type="button" className="icon-button" onClick={onClose} aria-label={locale === 'ar' ? 'إغلاق التفاصيل' : 'Close details'}><X size={19} /></button>
+      </header>
+      {loading ? <div className="table-state" role="status"><LoaderCircle className="spin" size={22} />{locale === 'ar' ? 'جارٍ تحميل تفاصيل الطلب...' : 'Loading order details...'}</div>
+        : error ? <div className="order-detail-error" role="alert"><CircleHelp size={18} /><span>{error}</span></div>
+          : order && <>
+            <div className="order-detail-summary">
+              <span className={`status-chip status-${status.toLowerCase()}`}><i />{status.replaceAll('_', ' ')}</span>
+              <span>{dateLabel(order.createdAt)}</span>
+              {storeHref && <Link to={storeHref}>{String(store.name || '')}</Link>}
+            </div>
+            <section className="order-detail-section">
+              <h3><User size={17} />{locale === 'ar' ? 'العميل والتوصيل' : 'Customer & delivery'}</h3>
+              <dl className="order-detail-fields">
+                <div><dt>{locale === 'ar' ? 'الاسم' : 'Name'}</dt><dd>{name || '—'}</dd></div>
+                <div><dt>{locale === 'ar' ? 'الهاتف' : 'Phone'}</dt><dd dir="ltr">{String(order.customerPhone || customer.phone || '—')}</dd></div>
+                <div><dt>{locale === 'ar' ? 'العنوان' : 'Address'}</dt><dd>{String(order.deliveryAddress || '—')}</dd></div>
+                <div><dt>{locale === 'ar' ? 'الوقت المطلوب' : 'Requested time'}</dt><dd>{dateLabel(order.requestedAt)}</dd></div>
+                <div><dt>{locale === 'ar' ? 'ملاحظات' : 'Notes'}</dt><dd>{String(order.deliveryNotes || '—')}</dd></div>
+              </dl>
+            </section>
+            <section className="order-detail-section">
+              <h3><ShoppingBag size={17} />{locale === 'ar' ? 'المنتجات' : 'Items'} <span>{items.length}</span></h3>
+              <div className="order-detail-items">{items.map((item, index) => {
+                const image = assetUrl(item.mainImage);
+                return <article className="order-detail-item" key={String(item.id || `${item.productSlug}-${index}`)}>
+                  <span className="order-detail-image">{image ? <img src={image} alt="" /> : <ShoppingBag size={17} />}</span>
+                  <span className="order-detail-item-name"><strong>{String((locale === 'ar' ? item.productNameAr : item.productNameEn) || item.productNameAr || item.productNameEn || item.productSlug || '')}</strong>{Boolean(item.variantName) && <small>{String(item.variantName)}</small>}<small>{formatCurrency(item.unitPrice, locale)} × {Number(item.quantity) || 0}</small></span>
+                  <strong>{formatCurrency(item.total, locale)}</strong>
+                </article>;
+              })}</div>
+              <dl className="order-detail-totals">
+                <div><dt>{locale === 'ar' ? 'المجموع الفرعي' : 'Subtotal'}</dt><dd>{formatCurrency(order.subtotal, locale)}</dd></div>
+                <div><dt>{locale === 'ar' ? 'الخصم' : 'Discount'}</dt><dd>−{formatCurrency(order.discount, locale)}</dd></div>
+                <div><dt>{locale === 'ar' ? 'رسوم التوصيل' : 'Delivery fee'}</dt><dd>{formatCurrency(order.deliveryFee, locale)}</dd></div>
+                <div><dt>{locale === 'ar' ? 'الدفع' : 'Payment'}</dt><dd>{String(order.paymentMethod || '—')} · {String(order.paymentStatus || '—')}</dd></div>
+                <div className="order-detail-grand-total"><dt>{locale === 'ar' ? 'الإجمالي' : 'Total'}</dt><dd>{formatCurrency(order.total, locale)}</dd></div>
+              </dl>
+            </section>
+            {history.length > 0 && <section className="order-detail-section"><h3><Clock3 size={17} />{locale === 'ar' ? 'سجل الحالة' : 'Status history'}</h3><ol className="order-history">{history.map((entry, index) => <li key={`${String(entry.status)}-${String(entry.createdAt)}-${index}`}><span className="order-history-dot" /><span><strong>{String(entry.status || '').replaceAll('_', ' ')}</strong><small>{dateLabel(entry.createdAt)}</small></span></li>)}</ol></section>}
+            {(transitions[status] || (canCancel && !['DELIVERED', 'CANCELLED', 'REFUNDED'].includes(status)) || (canChangeTable && !['DELIVERED', 'CANCELLED', 'REFUNDED'].includes(status))) && <footer className="order-detail-actions">
+              {canChangeTable && !['DELIVERED', 'CANCELLED', 'REFUNDED'].includes(status) && <button type="button" className="button button-outline" onClick={onChangeTable}>{locale === 'ar' ? 'تغيير الطاولة' : 'Change table'}</button>}
+              {canCancel && !['DELIVERED', 'CANCELLED', 'REFUNDED'].includes(status) && <button type="button" className="button button-quiet" onClick={onCancel}>{locale === 'ar' ? 'إلغاء الطلب' : 'Cancel order'}</button>}
+              {transitions[status] && <button type="button" className="button button-primary" onClick={onAdvance}>{locale === 'ar' ? `تحديث إلى ${transitions[status]}` : `Move to ${transitions[status].replaceAll('_', ' ')}`}<ArrowLeft size={16} /></button>}
+            </footer>}
+          </>}
+    </section>
+  </div>;
 }
 
 function RecordTable({ items, kind, locale, isCustomer = false, onEdit, onVariants, onAction, onChangeTable, onQr }: { items: unknown[]; kind: ResourceKind; locale: Locale; isCustomer?: boolean; onQr?: (record: Record<string, unknown>) => void; onEdit?: (record: Record<string, unknown>) => void; onVariants?: (record: Record<string, unknown>) => void; onAction?: (record: Record<string, unknown>) => void; onChangeTable?: (record: Record<string, unknown>) => void }) {

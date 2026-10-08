@@ -82,6 +82,7 @@ async function run() {
     created.categoryId = category.id;
     const product = expect(await request(`/api/stores/${storeId}/products`, { method: 'POST', token: owner.token, body: { categoryId: category.id, nameAr: 'منتج', nameEn: `RT product ${suffix}`, price: 10, stock: 5 } }), 201, 'Create product');
     created.productId = product.id;
+    expect(await request(`/api/products/${product.id}`, { method: 'PUT', token: staff.token, body: { stock: 2 } }), 403, 'Staff cannot modify product inventory');
 
     const sockets = {
       owner: await connect(owner.token),
@@ -117,6 +118,10 @@ async function run() {
     if (!has(sockets.owner, 'order:created')) throw new Error('Store owner did not receive order:created');
     if (!has(sockets.staff, 'order:created')) throw new Error('Staff did not receive order:created');
     if (!has(sockets.customer, 'order:created')) throw new Error('Customer did not receive its own order:created');
+    const createdEvent = sockets.owner.events.find((event) => event.name === 'order:created')?.payload;
+    if (!createdEvent?.orderNumber || !createdEvent.customerName || !Number.isFinite(Number(createdEvent.total)) || createdEvent.itemCount !== 1) {
+      throw new Error('New-order event does not contain the order notification summary');
+    }
     if (sockets.other.events.length) throw new Error('Other tenant received events: cross-tenant leak');
     console.log('✓ New order reached store owner, staff and customer; other tenant received nothing');
 

@@ -151,13 +151,22 @@ async function run() {
         categoryId: created.categoryId,
         nameAr: 'منتج اختبار التكامل',
         nameEn: `Integration Product ${Date.now()}`,
+        descriptionEn: 'A product description verified by the commerce integration test.',
+        type: 'VARIABLE',
         price: 20,
+        compareAtPrice: 25,
         stock: 5,
       },
     });
     assertStatus(product, 201, 'Create product');
-    created.productId = data(product)?.id;
+    const createdProduct = data(product);
+    created.productId = createdProduct?.id;
     if (!created.productId) throw new Error('Product creation did not return an ID');
+    if (
+      createdProduct.descriptionEn !== 'A product description verified by the commerce integration test.' ||
+      createdProduct.type !== 'VARIABLE' ||
+      Number(createdProduct.compareAtPrice) !== 25
+    ) throw new Error('Product creation did not persist description, type and compare-at price');
 
     const productUpdated = await request(`/api/products/${encodeURIComponent(created.productId)}`, {
       method: 'PUT',

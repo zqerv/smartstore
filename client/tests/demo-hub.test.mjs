@@ -32,6 +32,7 @@ for (const locale of ['ar', 'en']) {
     assert.match(html, /Maison Élan/);
     assert.match(html, /href="\/store\/veloura"/);
     assert.match(html, /href="\/store\/maison-elan"/);
+    assert.match(html, /TECHNOLOGY • SECURITY • INTELLIGENCE/);
     assert.doesNotMatch(html, /SmartStore|href="\/store\/demo"|\/demo\/access|\/login|password|@.*\.demo/i);
     assert.match(html, new RegExp(`dir="${locale === 'ar' ? 'rtl' : 'ltr'}" lang="${locale}"`));
   });

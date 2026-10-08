@@ -65,8 +65,12 @@ export class ProductService {
     categoryId,
     nameAr,
     nameEn,
+    descriptionAr,
+    descriptionEn,
     slug,
+    type,
     price,
+    compareAtPrice,
     stock,
     quantity,
     sku,
@@ -74,8 +78,12 @@ export class ProductService {
     categoryId: string;
     nameAr: string;
     nameEn?: string;
+    descriptionAr?: string | null;
+    descriptionEn?: string | null;
     slug?: string;
+    type?: 'SIMPLE' | 'VARIABLE';
     price: number | string;
+    compareAtPrice?: number | string | null;
     stock?: number | string;
     quantity?: number | string;
     sku?: string;
@@ -116,8 +124,12 @@ export class ProductService {
         categoryId,
         nameAr,
         nameEn,
+        descriptionAr,
+        descriptionEn,
         slug: slugValue,
+        type,
         price: priceValue,
+        compareAtPrice: compareAtPrice == null ? undefined : Number(compareAtPrice),
         stock: stockValue,
         sku,
         status: 'ACTIVE',

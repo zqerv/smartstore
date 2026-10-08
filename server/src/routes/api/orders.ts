@@ -219,6 +219,9 @@ router.post(
       storeId,
       customerId,
       status: order.status,
+      customerName: order.customerName,
+      total: Number(order.total),
+      itemCount: orderData.items.reduce((count, item) => count + item.quantity, 0),
     };
 
     realtime.toStoreAndStorefront(
@@ -360,9 +363,13 @@ router.post(
     // These records do not require customer registration or login.
 
     const orderSummary = {
+      id: order.id,
       orderNumber: order.orderNumber,
       storeId: cart.storeId,
       status: order.status,
+      customerName: order.customerName,
+      total: Number(order.total),
+      itemCount: orderItems.reduce((count, item) => count + item.quantity, 0),
     };
 
     realtime.toStoreAndStorefront(

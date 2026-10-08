@@ -1,5 +1,5 @@
 import { ArrowLeft, ArrowRight, Globe2, ShieldCheck, ShoppingBag, Sparkles } from 'lucide-react';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import './demo-hub.css';
 
@@ -32,13 +32,24 @@ export function DemoHubPage({ locale, setLocale }: {
   locale: Locale;
   setLocale: (locale: Locale) => void;
 }) {
+  const [introState, setIntroState] = useState<'visible' | 'leaving' | 'hidden'>('visible');
   const ar = locale === 'ar';
   const Arrow = ar ? ArrowLeft : ArrowRight;
 
   useEffect(() => {
     const previousTitle = document.title;
     document.title = 'VAYRON STORE | Demo Hub';
-    return () => { document.title = previousTitle; };
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      setIntroState('hidden');
+      return () => { document.title = previousTitle; };
+    }
+    const leaveTimer = window.setTimeout(() => setIntroState('leaving'), 850);
+    const hideTimer = window.setTimeout(() => setIntroState('hidden'), 1_100);
+    return () => {
+      window.clearTimeout(leaveTimer);
+      window.clearTimeout(hideTimer);
+      document.title = previousTitle;
+    };
   }, []);
 
   return (
@@ -117,6 +128,15 @@ export function DemoHubPage({ locale, setLocale }: {
         <span>{ar ? 'صُممت لتمنح تجارتك حضوراً مختلفاً.' : 'Built to give your business a distinctive presence.'}</span>
         <a href="#demo-title">{ar ? 'العودة للأعلى' : 'Back to top'}</a>
       </footer>
+      {introState !== 'hidden' && <div className={`vayron-intro vayron-intro-${introState}`} role="status" aria-live="polite">
+        <div className="vayron-intro-lockup" dir="ltr">
+          <span>VAYRON</span>
+          <small>TECHNOLOGY • SECURITY • INTELLIGENCE</small>
+        </div>
+        <button type="button" onClick={() => setIntroState('hidden')}>
+          {ar ? 'تخطّ المقدمة' : 'Skip intro'}
+        </button>
+      </div>}
     </main>
   );
 }
